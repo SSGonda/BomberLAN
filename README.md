@@ -35,4 +35,5 @@ This should run a client that connects to `127.0.0.1` in port `15000`
 ### Haskell
 
 Server Boilerplate Code from [https://jaspervdj.be/websockets/example/server.html](https://jaspervdj.be/websockets/example/server.html)
-Client Boilerplate Code from [https://github.com/jaspervdj/websockets/blob/master/example/client.hs](https://github.com/jaspervdj/websockets/blob/master/example/client.hs)
+
+Client Boilerplate Code from [https://github.com/haskell-miso/miso-websocket/blob/main/src/WebSocket.hs](https://github.com/haskell-miso/miso-websocket/blob/main/src/WebSocket.hs)
