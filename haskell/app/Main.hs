@@ -29,6 +29,7 @@ import           Miso.String (ToMisoString, MisoString)
 import qualified Miso.String as MS
 import Data.Time (UTCTime, getCurrentTime)
 import System.Random (getStdRandom, randomR)
+import Control.Lens ((^?), (.~), element)
 
 import Data.Aeson (ToJSON, FromJSON, encode, decode)
 import qualified Data.ByteString.Lazy as BL
@@ -128,6 +129,14 @@ data ServerResponse = ServerResponse {
 instance FromJSON ServerResponse
 instance ToJSON ServerResponse
 
+data ClientRequest = ClientRequest {
+  tag :: Text,
+  action :: Text
+} deriving (Generic, Show)
+
+instance FromJSON ClientRequest
+instance ToJSON ClientRequest
+
 initPlayerPositions :: [(Int, Float, Float)] -- id, x, y
 initPlayerPositions = [(0, 1.0, 1.0), (1, 1.0, 13.0), (2, 11.0, 13.0), (3, 11.0, 1.0)]
 
@@ -139,7 +148,7 @@ initPlayer id x y = Player {
   maxBombs = 1,
   currentBombs = 0,
   bombRange = 1,
-  speed = 1.0,
+  speed = 0.1,
   isAlive = True,
   activePowerups = []
 }
@@ -254,8 +263,53 @@ application state pending = do
 
 talk :: WS.Connection -> MVar ServerState -> Client -> IO ()
 talk conn state (user, _) = forever $ do
-    msg <- WS.receiveData conn :: IO Text
-    readMVar state >>= broadcast (encode ServerResponse { tag = "UserMessage", gameState = Nothing, message = Just (show user <> " : " <> T.unpack msg) } )
+    msg <- WS.receiveData conn
+    print msg
+    case (decode msg :: Maybe ClientRequest) of
+      Just cr -> do
+        modifyMVar_ state $ \s -> do
+          let gs = parseClientRequest user cr s.gameState
+          let s' = (s { gameState = gs }) :: ServerState
+
+          broadcast (encode ServerResponse {
+            tag = "StateUpdate",
+            gameState = Just gs,
+            message = Nothing
+          }) s'
+
+          return s'
+      Nothing ->
+        readMVar state >>= broadcast (encode ServerResponse { tag = "UserMessage", gameState = Nothing, message = Just (show user <> " : " <> "gave invalid request") } )
+
+updatePlayerDeltaY :: Int -> Float -> GameState -> GameState
+updatePlayerDeltaY pid deltaY gs = gs { players = players' }
+  where 
+    players' = case gs.players ^? element pid of
+      Just p -> gs.players & element pid Control.Lens..~ ((p { y = deltaY * p.speed + p.y }) :: Player)
+      Nothing -> gs.players
+
+updatePlayerDeltaX :: Int -> Float -> GameState -> GameState
+updatePlayerDeltaX pid deltaX gs = gs { players = players' }
+  where 
+    players' = case gs.players ^? element pid of
+      Just p -> gs.players & element pid Control.Lens..~ ((p { x = deltaX * p.speed + p.x }) :: Player)
+      Nothing -> gs.players
+
+updatePlayerBomb :: Int -> GameState -> GameState
+updatePlayerBomb pid gs = gs { players = players' }
+  where
+    players' = case gs.players ^? element pid of
+      Just p -> gs.players & element pid Control.Lens..~ ((p { currentBombs = p.currentBombs + 1 }) :: Player)
+      Nothing -> gs.players
+    -- TODO Update bombs
+
+parseClientRequest :: Int -> ClientRequest -> GameState -> GameState
+parseClientRequest pid cr gs
+  | cr.action == "up" = updatePlayerDeltaY pid (-1) gs
+  | cr.action == "down" = updatePlayerDeltaY pid 1 gs
+  | cr.action == "left" = updatePlayerDeltaX pid (-1) gs
+  | cr.action == "right" = updatePlayerDeltaX pid 1 gs
+  | cr.action == "bomb" = updatePlayerBomb pid gs
 
 -- =-----------------------------------=
 --             CLIENT CODE
@@ -386,6 +440,12 @@ websocketComponent box =
         clearInput .= True
         msg .= ""
         received .= []
+--------------
+jsonRequest :: Text -> MisoString
+jsonRequest a = MS.ms (encode ClientRequest {
+  tag = "ClientUpdate",
+  action = a
+})
 -----------------------------------------------------------------------------
 viewModel :: Model -> M.View Model Action
 viewModel m =
@@ -443,30 +503,39 @@ viewModel m =
         ["Clear"]
       ]
     , H.div_
-      [ P.class_ "websocket-input" ]
-      [ H.input_ $
-        [ P.placeholder_ "Type a message..."
-        , P.class_ "input-field message-input"
-        , H.onInput Update
-        , H.onEnter NoOp Send
-        , P.type_ "text"
-        ] ++
-        [ P.disabled_
-        | not (m ^. connected)
-        ] ++
-        [ P.value_ ""
-        | m ^. clearInput
-        ]
-      , M.optionalAttrs
-        H.button_
-        [ P.class_ "btn btn-primary send-btn"
-        , H.onClick Send
-        ]
-        (not (m ^. connected))
-        [ P.disabled_ ]
-        [ "Send"
-        ]
-      ]
+      [ P.class_ "websocket-input"]
+      [ H.button_ [H.onClick (SendMessage (jsonRequest "up"))] [M.text "Up"]
+        , H.button_ [H.onClick (SendMessage (jsonRequest "down"))] [M.text "Down"]
+        , H.button_ [H.onClick (SendMessage (jsonRequest "left"))] [M.text "Left"]
+        , H.button_ [H.onClick (SendMessage (jsonRequest "right"))] [M.text "Right"]
+        , H.button_ [H.onClick (SendMessage (jsonRequest "bomb"))] [M.text "Bomb"]
+       ]
+    -- , H.div_
+    --   [ P.class_ "websocket-input" ]
+    --   [ H.input_ $
+    --     [ P.placeholder_ "Type a message..."
+    --     , P.class_ "input-field message-input"
+    --     , H.onInput Update
+    --     , H.onEnter NoOp Send
+    --     , P.type_ "text"
+    --     ] ++
+    --     [ P.disabled_
+    --     | not (m ^. connected)
+    --     ] ++
+    --     [ P.value_ ""
+    --     | m ^. clearInput
+    --     ]
+    --   , M.optionalAttrs
+    --     H.button_
+    --     [ P.class_ "btn btn-primary send-btn"
+    --     , H.onClick Send
+    --     ]
+    --     (not (m ^. connected))
+    --     [ P.disabled_ ]
+    --     [ "Send"
+    --     ]
+    --   ]
+    
     , H.div_
       [ P.class_ "messages-list"
       ] $
