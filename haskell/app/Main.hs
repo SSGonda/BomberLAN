@@ -3,50 +3,34 @@
 -- =-----------------------------------=
 
 {-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE DeriveAnyClass #-}
-{-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE OverloadedRecordDot #-}
--- {-# LANGUAGE NoFieldSelectors #-}
+{-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE CPP #-}
+{-# LANGUAGE DuplicateRecordFields #-}
+{-# LANGUAGE FlexibleContexts #-}
 module Main where
 import Data.Char (isPunctuation, isSpace)
-import Data.Monoid (mappend)
 import Data.Text (Text)
 import Control.Exception (finally)
 import Control.Monad (forM_, forever, unless)
-import Control.Concurrent (MVar, newMVar, modifyMVar_, modifyMVar, readMVar, forkIO)
+import Control.Concurrent (MVar, newMVar, modifyMVar_, modifyMVar, readMVar)
 import qualified Data.Text as T
 import qualified Data.Text.IO as T
 import qualified Network.WebSockets as WS
-import           Control.Monad.Trans (liftIO)
-import           Network.Socket      (withSocketsDo)
 import System.Environment (getArgs)
-import Data.Aeson (FromJSON)
 import Debug.Trace (trace)
-import GHC.Generics (Generic)
 import qualified Miso as M
-import Miso.Fetch (Response (..))
 import qualified Miso.Html as H
 import qualified Miso.Html.Property as P
-import Text.Read (readMaybe)
-import Data.Function ((&))
------------------------------------------------------------------------------
-{-# LANGUAGE GeneralizedNewtypeDeriving #-}
-{-# LANGUAGE OverloadedStrings          #-}
-{-# LANGUAGE TypeApplications           #-}
-{-# LANGUAGE TemplateHaskell            #-}
-{-# LANGUAGE RecordWildCards            #-}
-{-# LANGUAGE DeriveGeneric              #-}
-{-# LANGUAGE LambdaCase                 #-}
-{-# LANGUAGE CPP                        #-}
------------------------------------------------------------------------------
-import           Control.Monad (unless)
 import           GHC.Generics
------------------------------------------------------------------------------
--- import           Miso hiding (on)
 import           Miso.Lens
 import           Miso.WebSocket
 import           Miso.String (ToMisoString, MisoString)
 import qualified Miso.String as MS
+import Data.Time (UTCTime, getCurrentTime)
+import System.Random (getStdRandom, randomR)
+
+import Data.Aeson (ToJSON, FromJSON, encode, decode)
 
 -- Check whether to run a server or client
 
@@ -67,33 +51,176 @@ main = do
 
 type Client = (Text, WS.Connection)
 
-type ServerState = [Client]
+data ServerState = ServerState {
+  clients :: [Client],
+  gameState :: GameState
+}
 
+data Player = Player {
+  id :: Int,
+  x :: Float,
+  y :: Float,
+  maxBombs :: Int,
+  currentBombs :: Int,
+  bombRange :: Int,
+  speed :: Float,
+  isAlive :: Bool,
+  activePowerups :: [Text]
+} deriving (Generic, Show)
 
+instance FromJSON Player
+instance ToJSON Player
 
-newServerState :: ServerState
-newServerState = []
+data Bomb = Bomb {
+  player :: Int,
+  x :: Int,
+  y :: Int,
+  timePlaced :: UTCTime,
+  maxTime :: Int,
+  radius :: Int
+} deriving (Generic, Show)
+
+instance FromJSON Bomb
+instance ToJSON Bomb
+
+data Powerup = Powerup {
+  name :: Text,
+  x :: Int,
+  y :: Int
+} deriving (Generic, Show)
+
+instance FromJSON Powerup
+instance ToJSON Powerup
+
+data Explosion = Explosion {
+  timePlaced :: UTCTime,
+  x :: Int,
+  y :: Int
+} deriving (Generic, Show)
+
+instance FromJSON Explosion
+instance ToJSON Explosion
+
+data GameState = GameState {
+  maxPlayers :: Int,
+  gameDuration :: Int,
+  isGameStarted :: Bool,
+  isGameOver :: Bool,
+  gameStartTime :: UTCTime,
+  winner :: Maybe Int,
+  players :: [Player],
+  bombs :: [Bomb],
+  powerups :: [Powerup],
+  explosions :: [Explosion],
+  grid :: [[Int]]
+} deriving (Generic, Show)
+
+instance FromJSON GameState
+instance ToJSON GameState
+
+data ServerResponse = ServerResponse {
+  tag :: Text,
+  gameState :: GameState
+} deriving (Generic, Show)
+
+instance FromJSON ServerResponse
+instance ToJSON ServerResponse
+
+initPlayerPositions :: [(Int, Float, Float)] -- id, x, y
+initPlayerPositions = [(0, 1.0, 1.0), (1, 1.0, 13.0), (2, 11.0, 13.0), (3, 11.0, 1.0)]
+
+initPlayer :: Int -> Float -> Float -> Player
+initPlayer id x y = Player {
+  id = id,
+  x = x,
+  y = y,
+  maxBombs = 1,
+  currentBombs = 0,
+  bombRange = 1,
+  speed = 1.0,
+  isAlive = True,
+  activePowerups = []
+}
+
+positionToPlayer :: (Int, Float, Float) -> Player
+positionToPlayer (id, x, y) = initPlayer id x y
+
+makePlayers :: Int -> [Player]
+makePlayers numPlayers = map positionToPlayer (take numPlayers initPlayerPositions)
+
+emptyGrid :: [[Int]]
+emptyGrid = [[2,2,2,2,2,2,2,2,2,2,2,2,2,2,2],
+            [2,0,0,0,0,0,0,0,0,0,0,0,0,0,2],
+            [2,0,2,0,2,0,2,0,2,0,2,0,2,0,2],
+            [2,0,0,0,0,0,0,0,0,0,0,0,0,0,2],
+            [2,0,2,0,2,0,2,0,2,0,2,0,2,0,2],
+            [2,0,0,0,0,0,0,0,0,0,0,0,0,0,2],
+            [2,0,2,0,2,0,2,0,2,0,2,0,2,0,2],
+            [2,0,0,0,0,0,0,0,0,0,0,0,0,0,2],
+            [2,0,2,0,2,0,2,0,2,0,2,0,2,0,2],
+            [2,0,0,0,0,0,0,0,0,0,0,0,0,0,2],
+            [2,0,2,0,2,0,2,0,2,0,2,0,2,0,2],
+            [2,0,0,0,0,0,0,0,0,0,0,0,0,0,2],
+            [2,2,2,2,2,2,2,2,2,2,2,2,2,2,2]]
+
+-- randomChanceEachRow :: [Int] -> [IO Int]
+-- randomChanceEachRow = map randSoft
+--   where
+--     randSoft :: Int -> IO Int
+--     randSoft c = case c of
+--       0 -> getStdRandom (randomR (0, 1))
+--       x -> return x
+
+-- initGrid :: [[IO Int]]
+-- initGrid = map randomChanceEachRow emptyGrid
+
+initGameState :: Int -> Int -> IO GameState
+initGameState numPlayers gameDuration = do
+  currentTime <- getCurrentTime
+  -- grid <- emptyGrid
+  return GameState {
+  maxPlayers = numPlayers,
+  gameDuration = gameDuration,
+  isGameStarted = False,
+  isGameOver = False,
+  gameStartTime = currentTime, -- Dummy start time
+  winner = Nothing,
+  players = makePlayers numPlayers,
+  bombs = [],
+  powerups = [],
+  explosions = [],
+  grid = emptyGrid
+}
+
+newServerState :: IO ServerState
+newServerState = do
+  initialGameState <- initGameState 2 120 -- TODO unhardcode this
+  return ServerState {
+    clients = [],
+    gameState = initialGameState 
+  }
 
 numClients :: ServerState -> Int
-numClients = length
+numClients s = length s.clients
 
 clientExists :: Client -> ServerState -> Bool
-clientExists client = any ((== fst client) . fst)
+clientExists client s = any ((== fst client) . fst) s.clients
 
 addClient :: Client -> ServerState -> ServerState
-addClient client clients = client : clients
+addClient client s = s { clients = client : clients s }
 
 removeClient :: Client -> ServerState -> ServerState
-removeClient client = filter ((/= fst client) . fst)
+removeClient client s = s { clients = filter ((/= fst client) . fst) s.clients }
 
 broadcast :: Text -> ServerState -> IO ()
-broadcast message clients = do
+broadcast message s = do
     T.putStrLn message
-    forM_ clients $ \(_, conn) -> WS.sendTextData conn message
+    forM_ s.clients $ \(_, conn) -> WS.sendTextData conn message
 
 mainServer :: IO ()
 mainServer = do
-    state <- newMVar newServerState
+    initialState <- newServerState
+    state <- newMVar initialState
     putStrLn "Server Running"
     WS.runServer "127.0.0.1" 15000 $ application state -- Port Hardcoded as per Phase 2 specs
 
@@ -101,7 +228,7 @@ application state pending = do
     conn <- WS.acceptRequest pending
     WS.forkPingThread conn 30
     msg <- WS.receiveData conn
-    clients <- readMVar state
+    sstate <- readMVar state
     case msg of
         _   | not (prefix `T.isPrefixOf` msg) ->
                 WS.sendTextData conn ("Wrong announcement" :: Text)
@@ -110,15 +237,16 @@ application state pending = do
                     WS.sendTextData conn ("Name cannot " `mappend`
                         "contain punctuation or whitespace, and " `mappend`
                         "cannot be empty" :: Text)
-            | clientExists client clients ->
+            | clientExists client sstate ->
                 WS.sendTextData conn ("User already exists" :: Text)
             | otherwise -> flip finally disconnect $ do
                modifyMVar_ state $ \s -> do
                    let s' = addClient client s
                    WS.sendTextData conn $
                        "Welcome! Users: " `mappend`
-                       T.intercalate ", " (map fst s)
+                       T.intercalate ", " (map fst s.clients)
                    broadcast (fst client `mappend` " joined") s'
+                   broadcast (T.pack $ show $ encode s'.gameState) s'
                    return s'
                talk conn state client
           where
@@ -361,7 +489,7 @@ viewModel m =
 -----------------------------------------------------------------------------
 messageHeader :: [Message] -> [ M.View model action ]
 messageHeader messages = concat
-  [ 
+  [
     [ H.div_
       [ P.class_ "message-header" ]
       [ H.span_ [P.class_ "message-origin"] [ M.text (MS.ms origin) ]
@@ -373,4 +501,5 @@ messageHeader messages = concat
   ]
 -----------------------------------------------------------------------------
 mainClient :: IO ()
-mainClient = M.run $ M.startApp (websocketComponent 0)
+mainClient = M.run $ M.startApp (websocketComponent 0) -- 0 is the socket id
+
