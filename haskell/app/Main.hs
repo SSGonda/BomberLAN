@@ -163,34 +163,39 @@ emptyGrid = [[2,2,2,2,2,2,2,2,2,2,2,2,2,2,2],
             [2,0,0,0,0,0,0,0,0,0,0,0,0,0,2],
             [2,2,2,2,2,2,2,2,2,2,2,2,2,2,2]]
 
--- randomChanceEachRow :: [Int] -> [IO Int]
--- randomChanceEachRow = map randSoft
---   where
---     randSoft :: Int -> IO Int
---     randSoft c = case c of
---       0 -> getStdRandom (randomR (0, 1))
---       x -> return x
+randomChanceEachRow :: [Int] -> IO [Int]
+randomChanceEachRow = mapM randSoft
+  where
+    randSoft :: Int -> IO Int
+    randSoft c = case c of
+      0 -> do 
+        p <- getStdRandom (randomR (0, 99))
+        if p < 40 then
+          return 1
+        else
+          return 0
+      x -> return x
 
--- initGrid :: [[IO Int]]
--- initGrid = map randomChanceEachRow emptyGrid
+initGrid :: IO [[Int]]
+initGrid = mapM randomChanceEachRow emptyGrid
 
 initGameState :: Int -> Int -> IO GameState
 initGameState numPlayers gameDuration = do
   currentTime <- getCurrentTime
-  -- grid <- emptyGrid
+  grid <- initGrid
   return GameState {
-  maxPlayers = numPlayers,
-  gameDuration = gameDuration,
-  isGameStarted = False,
-  isGameOver = False,
-  gameStartTime = currentTime, -- Dummy start time
-  winner = Nothing,
-  players = makePlayers numPlayers,
-  bombs = [],
-  powerups = [],
-  explosions = [],
-  grid = emptyGrid
-}
+    maxPlayers = numPlayers,
+    gameDuration = gameDuration,
+    isGameStarted = False,
+    isGameOver = False,
+    gameStartTime = currentTime, -- Dummy start time
+    winner = Nothing,
+    players = makePlayers numPlayers,
+    bombs = [],
+    powerups = [],
+    explosions = [],
+    grid = grid
+  }
 
 newServerState :: IO ServerState
 newServerState = do
