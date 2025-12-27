@@ -31,6 +31,7 @@ import Data.Time (UTCTime, getCurrentTime)
 import System.Random (getStdRandom, randomR)
 
 import Data.Aeson (ToJSON, FromJSON, encode, decode)
+import qualified Data.ByteString.Lazy as BL
 
 -- Check whether to run a server or client
 
@@ -49,7 +50,7 @@ main = do
 -- THE FOLLOWING CODE IS DERIVED FROM THE EXAMPLE SECTION OF THE WEBSOCKETS DOCUMENTATION BY JASPERVDJ
 -- https://jaspervdj.be/websockets/example/server.html
 
-type Client = (Text, WS.Connection)
+type Client = (Int, WS.Connection)
 
 data ServerState = ServerState {
   clients :: [Client],
@@ -120,7 +121,8 @@ instance ToJSON GameState
 
 data ServerResponse = ServerResponse {
   tag :: Text,
-  gameState :: GameState
+  gameState :: Maybe GameState,
+  message :: Maybe String
 } deriving (Generic, Show)
 
 instance FromJSON ServerResponse
@@ -168,7 +170,7 @@ randomChanceEachRow = mapM randSoft
   where
     randSoft :: Int -> IO Int
     randSoft c = case c of
-      0 -> do 
+      0 -> do
         p <- getStdRandom (randomR (0, 99))
         if p < 40 then
           return 1
@@ -202,7 +204,7 @@ newServerState = do
   initialGameState <- initGameState 2 120 -- TODO unhardcode this
   return ServerState {
     clients = [],
-    gameState = initialGameState 
+    gameState = initialGameState
   }
 
 numClients :: ServerState -> Int
@@ -217,9 +219,9 @@ addClient client s = s { clients = client : clients s }
 removeClient :: Client -> ServerState -> ServerState
 removeClient client s = s { clients = filter ((/= fst client) . fst) s.clients }
 
-broadcast :: Text -> ServerState -> IO ()
+broadcast :: BL.ByteString -> ServerState -> IO ()
 broadcast message s = do
-    T.putStrLn message
+    print message
     forM_ s.clients $ \(_, conn) -> WS.sendTextData conn message
 
 mainServer :: IO ()
@@ -232,42 +234,28 @@ mainServer = do
 application state pending = do
     conn <- WS.acceptRequest pending
     WS.forkPingThread conn 30
-    msg <- WS.receiveData conn
+    msg <- WS.receiveData conn :: IO Text
     sstate <- readMVar state
-    case msg of
-        _   | not (prefix `T.isPrefixOf` msg) ->
-                WS.sendTextData conn ("Wrong announcement" :: Text)
-            | any ($ fst client)
-                [T.null, T.any isPunctuation, T.any isSpace] ->
-                    WS.sendTextData conn ("Name cannot " `mappend`
-                        "contain punctuation or whitespace, and " `mappend`
-                        "cannot be empty" :: Text)
-            | clientExists client sstate ->
-                WS.sendTextData conn ("User already exists" :: Text)
-            | otherwise -> flip finally disconnect $ do
-               modifyMVar_ state $ \s -> do
-                   let s' = addClient client s
-                   WS.sendTextData conn $
-                       "Welcome! Users: " `mappend`
-                       T.intercalate ", " (map fst s.clients)
-                   broadcast (fst client `mappend` " joined") s'
-                   broadcast (T.pack $ show $ encode s'.gameState) s'
-                   return s'
-               talk conn state client
-          where
-            prefix     = "Hi! I am "
-            client     = (T.drop (T.length prefix) msg, conn)
-            disconnect = do
-                -- Remove client and return new state
-                s <- modifyMVar state $ \s ->
-                    let s' = removeClient client s in return (s', s')
-                broadcast (fst client `mappend` " disconnected") s
+    let cid = numClients sstate
+    let client = (cid, conn)
+    flip finally (disconnect client) $ do
+        modifyMVar_ state $ \s -> do
+            let s' = addClient client s
+            print (show (fst client) <> " joined")
+            broadcast (encode ServerResponse { tag = "StateUpdate", gameState = Just sstate.gameState, message = Nothing}) s'
+            return s'
+        talk conn state client
+    where
+      disconnect c = do
+          -- Remove client and return new state
+          s <- modifyMVar state $ \s ->
+              let s' = removeClient c s in return (s', s')
+          print (show (fst c) <> " disconnected")
 
 talk :: WS.Connection -> MVar ServerState -> Client -> IO ()
 talk conn state (user, _) = forever $ do
-    msg <- WS.receiveData conn
-    readMVar state >>= broadcast
-        (user `mappend` ": " `mappend` msg)
+    msg <- WS.receiveData conn :: IO Text
+    readMVar state >>= broadcast (encode ServerResponse { tag = "UserMessage", gameState = Nothing, message = Just (show user <> " : " <> T.unpack msg) } )
 
 -- =-----------------------------------=
 --             CLIENT CODE
@@ -380,7 +368,7 @@ websocketComponent box =
         M.io $ do
           date <- M.newDate
           dateString <- date & M.toLocaleString
-          pure $ Append (Message dateString message SERVER)
+          pure $ Append (Message dateString (MS.ms $ show ( decode (MS.fromMisoString message) :: Maybe ServerResponse)) SERVER)
       Append message ->
         received %= (message :)
       OnError errorMessage ->
@@ -507,4 +495,6 @@ messageHeader messages = concat
 -----------------------------------------------------------------------------
 mainClient :: IO ()
 mainClient = M.run $ M.startApp (websocketComponent 0) -- 0 is the socket id
+
+
 

@@ -13,6 +13,6 @@ common warnings
 executable haskell
     import:           warnings
     main-is:          Main.hs
-    build-depends:    base ^>=4.21.0.0, miso, containers, websockets, aeson, text, mtl, network, time, random
+    build-depends:    base ^>=4.21.0.0, miso, containers, websockets, aeson, text, mtl, network, time, random, bytestring
     hs-source-dirs:   app
     default-language: Haskell2010
