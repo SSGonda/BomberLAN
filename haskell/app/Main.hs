@@ -13,7 +13,7 @@ import Data.Char (isPunctuation, isSpace)
 import Data.Text (Text)
 import Control.Exception (finally)
 import Control.Monad (forM_, forever, unless)
-import Control.Concurrent (MVar, newMVar, modifyMVar_, modifyMVar, readMVar)
+import Control.Concurrent (MVar, newMVar, modifyMVar_, modifyMVar, readMVar, threadDelay, forkIO)
 import qualified Data.Text as T
 import qualified Data.Text.IO as T
 import qualified Network.WebSockets as WS
@@ -68,7 +68,7 @@ data Player = Player {
   speed :: Float,
   isAlive :: Bool,
   activePowerups :: [Text]
-} deriving (Generic, Show)
+} deriving (Eq, Generic, Show)
 
 instance FromJSON Player
 instance ToJSON Player
@@ -80,7 +80,7 @@ data Bomb = Bomb {
   timePlaced :: UTCTime,
   maxTime :: Int,
   radius :: Int
-} deriving (Generic, Show)
+} deriving (Eq, Generic, Show)
 
 instance FromJSON Bomb
 instance ToJSON Bomb
@@ -89,7 +89,7 @@ data Powerup = Powerup {
   name :: Text,
   x :: Int,
   y :: Int
-} deriving (Generic, Show)
+} deriving (Eq, Generic, Show)
 
 instance FromJSON Powerup
 instance ToJSON Powerup
@@ -98,7 +98,7 @@ data Explosion = Explosion {
   timePlaced :: UTCTime,
   x :: Int,
   y :: Int
-} deriving (Generic, Show)
+} deriving (Eq, Generic, Show)
 
 instance FromJSON Explosion
 instance ToJSON Explosion
@@ -115,7 +115,7 @@ data GameState = GameState {
   powerups :: [Powerup],
   explosions :: [Explosion],
   grid :: [[Int]]
-} deriving (Generic, Show)
+} deriving (Eq, Generic, Show)
 
 instance FromJSON GameState
 instance ToJSON GameState
@@ -239,6 +239,9 @@ mainServer = do
     initialState <- newServerState 2 120 -- TODO unhardcode this
     state <- newMVar initialState
     putStrLn "Server Running"
+
+    _ <- forkIO $ gameLoop state
+
     WS.runServer "127.0.0.1" 15000 $ application state -- TODO unhardcode this Port Hardcoded as per Phase 2 specs
 
 application state pending = do
@@ -281,6 +284,27 @@ talk conn state (user, _) = forever $ do
           return s'
       Nothing ->
         readMVar state >>= broadcast (encode ServerResponse { tag = "UserMessage", gameState = Nothing, message = Just (show user <> " : " <> "gave invalid request") } )
+
+gameLoop :: MVar ServerState -> IO ()
+gameLoop state = forever $ do
+  currentTime <- getCurrentTime
+  modifyMVar_ state $ \s -> do
+    let gs = s.gameState
+    gs' <- updateGameState currentTime s.gameState
+    let s' = (s { gameState = gs' }) :: ServerState
+
+    unless (gs == gs') $ do
+      broadcast (encode ServerResponse {
+        tag = "StateUpdate",
+        gameState = Just gs,
+        message = Nothing
+      }) s'
+
+    return s'
+  threadDelay 16667 -- 16.667 ms to microseconds, 1000 ms / 60 frames
+
+updateGameState :: UTCTime -> GameState -> IO GameState
+updateGameState currentTime = return
 
 updatePlayerDeltaY :: Int -> Float -> GameState -> GameState
 updatePlayerDeltaY pid deltaY gs = gs { players = players' }
