@@ -290,7 +290,12 @@ gameLoop state = forever $ do
   currentTime <- getCurrentTime
   modifyMVar_ state $ \s -> do
     let gs = s.gameState
-    gs' <- updateGameState currentTime s.gameState
+
+    gs' <-  
+      if not gs.isGameStarted && (numClients s >= gs.maxPlayers) then return gs { isGameStarted = True, gameStartTime = currentTime } -- game not started
+      else if gs.isGameOver || not gs.isGameStarted then return gs -- game not started or game over
+      else updateGameState currentTime s.gameState -- update game
+    
     let s' = (s { gameState = gs' }) :: ServerState
 
     unless (gs == gs') $ do
@@ -308,14 +313,14 @@ updateGameState currentTime = return
 
 updatePlayerDeltaY :: Int -> Float -> GameState -> GameState
 updatePlayerDeltaY pid deltaY gs = gs { players = players' }
-  where 
+  where
     players' = case gs.players ^? element pid of
       Just p -> gs.players & element pid Control.Lens..~ ((p { y = deltaY * p.speed + p.y }) :: Player)
       Nothing -> gs.players
 
 updatePlayerDeltaX :: Int -> Float -> GameState -> GameState
 updatePlayerDeltaX pid deltaX gs = gs { players = players' }
-  where 
+  where
     players' = case gs.players ^? element pid of
       Just p -> gs.players & element pid Control.Lens..~ ((p { x = deltaX * p.speed + p.x }) :: Player)
       Nothing -> gs.players
@@ -339,12 +344,13 @@ updatePlayerBomb pid gs = do
     Just pl -> if pl.currentBombs < pl.maxBombs then do
       bomb <- initBomb pl.id (floor pl.x) (floor pl.y) 3 pl.bombRange
       let players' = gs.players & element pid Control.Lens..~ ((pl { currentBombs = pl.currentBombs + 1 }) :: Player)
-      return gs { players = players', bombs = bomb : gs.bombs }    
+      return gs { players = players', bombs = bomb : gs.bombs }
       else return gs
-    Nothing -> return gs 
-  
+    Nothing -> return gs
+
 parseClientRequest :: Int -> ClientRequest -> GameState -> IO GameState
 parseClientRequest pid cr gs
+  | gs.isGameOver || not gs.isGameStarted = return gs
   | cr.action == "up" = return (updatePlayerDeltaY pid (-1) gs)
   | cr.action == "down" = return (updatePlayerDeltaY pid 1 gs)
   | cr.action == "left" = return (updatePlayerDeltaX pid (-1) gs)
@@ -576,7 +582,7 @@ viewModel m =
     --     [ "Send"
     --     ]
     --   ]
-    
+
     , H.div_
       [ P.class_ "messages-list"
       ] $
