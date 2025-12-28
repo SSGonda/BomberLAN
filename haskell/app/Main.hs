@@ -255,7 +255,7 @@ application state pending = do
         modifyMVar_ state $ \s -> do
             let s' = addClient client s
             print (show (fst client) <> " joined")
-            broadcast (encode ServerResponse { tag = "StateUpdate", gameState = Just sstate.gameState, message = Nothing}) s'
+            WS.sendTextData conn (encode ServerResponse { tag = "ClientJoin", gameState = Nothing, message = Just (show cid)})
             return s'
         talk conn state client
     where
@@ -301,7 +301,7 @@ gameLoop state = forever $ do
     unless (gs == gs') $ do
       broadcast (encode ServerResponse {
         tag = "StateUpdate",
-        gameState = Just gs,
+        gameState = Just gs',
         message = Nothing
       }) s'
 
