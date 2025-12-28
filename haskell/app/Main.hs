@@ -247,6 +247,7 @@ mainServer = do
 
     WS.runServer "127.0.0.1" 15000 $ application state -- TODO unhardcode this Port Hardcoded as per Phase 2 specs
 
+application :: MVar ServerState -> WS.PendingConnection -> IO ()
 application state pending = do
     conn <- WS.acceptRequest pending
     WS.forkPingThread conn 30
@@ -310,6 +311,25 @@ gameLoop state = forever $ do
 
     return s'
   threadDelay 16667 -- 16.667 ms to microseconds, 1000 ms / 60 frames
+
+findWinner :: [Player] -> Maybe Int
+findWinner [] = Nothing
+findWinner ps = winner
+  where
+    alives = filter (\p -> p.isAlive) ps
+    winner = case length alives of
+      1 -> Just (head alives).id
+      _ -> Nothing
+
+updateCheckGameOver :: UTCTime -> GameState -> GameState
+updateCheckGameOver currentTime gs
+  | isExpired currentTime gs.gameStartTime gs.gameDuration = gs { isGameOver = True, winner = winr }
+  | otherwise = gs { isGameOver = gmover, winner = winr }
+  where
+    winr = findWinner gs.players
+    gmover = case winr of
+      Just _ -> True
+      Nothing -> False
 
 initExplosion :: UTCTime -> Int -> Int -> Explosion
 initExplosion currentTime x y = Explosion {
@@ -375,7 +395,7 @@ spawnPowerupWithProbability ps p x y = do
 
 explodeCoord :: Int -> (Int, Int) -> UTCTime -> GameState -> IO GameState
 explodeCoord r (x, y) currentTime gs = do
-  powerups'' <- foldM (\p (i, j) -> spawnPowerupWithProbability p 100 i j) powerups' softs
+  powerups'' <- foldM (\p (i, j) -> spawnPowerupWithProbability p 10 i j) powerups' softs
   return gs { grid = grid', bombs = bombs', powerups = powerups'', explosions = explosions' }
   where
     categorizeBlocks :: [(Int, Int)] -> [[Int]] -> ([(Int, Int)], [(Int, Int)])
@@ -492,7 +512,7 @@ updateBombs currentTime gs = gs''
     gs'' = explodeCoords coordsToExplode currentTime gs' -- add explosions, and do relevant explosion behaviour in gamestate
 
 isExpired :: UTCTime -> UTCTime -> Int -> Bool
-isExpired t1 t2 offset = abs (nominalDiffTimeToSeconds (diffUTCTime t1 t2)) >= fromIntegral offset
+isExpired t1 t2 offset = nominalDiffTimeToSeconds (diffUTCTime t1 t2) >= fromIntegral offset
 
 updateGameState :: UTCTime -> GameState -> IO GameState
 updateGameState currentTime gs =
@@ -502,6 +522,7 @@ updateGameState currentTime gs =
     <&> updateExpiredExplosions currentTime 
     <&> updateExplosionAreas
     <&> updatePowerupAreas
+    <&> updateCheckGameOver currentTime
 
 initBomb :: Int -> Int -> Int -> Int -> Int -> IO Bomb
 initBomb pid x y maxTime radius = do
