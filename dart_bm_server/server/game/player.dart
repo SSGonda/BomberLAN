@@ -12,7 +12,7 @@ class Player {
   int bombRange;
   double speed;
   bool isAlive;
-  DateTime lastTeleportTime;
+  // DateTime lastTeleportTime;
 
   Player({required this.id, required Point<double> startingPosition})
     : position = startingPosition,
@@ -22,8 +22,8 @@ class Player {
       currentBombs = 0,
       bombRange = 1,
       speed = GameConstants.baseSpeed,
-      isAlive = true,
-      lastTeleportTime = DateTime.now().subtract(const Duration(seconds: 2));
+      isAlive = true;
+  // lastTeleportTime = DateTime.now().subtract(const Duration(seconds: 2));
 
   void move(String direction) {
     switch (direction) {
