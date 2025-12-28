@@ -59,6 +59,8 @@ data Player = Player {
   id :: Int,
   x :: Float,
   y :: Float,
+  deltaX :: Int,
+  deltaY :: Int,
   maxBombs :: Int,
   currentBombs :: Int,
   bombRange :: Int,
@@ -142,6 +144,8 @@ initPlayer id x y = Player {
   id = id,
   x = x,
   y = y,
+  deltaX = 0,
+  deltaY = 0,
   maxBombs = 1,
   currentBombs = 0,
   bombRange = 1,
@@ -425,22 +429,23 @@ isExpired t1 t2 offset = abs (nominalDiffTimeToSeconds (diffUTCTime t1 t2)) >= f
 updateGameState :: UTCTime -> GameState -> GameState
 updateGameState currentTime gs = 
   gs
+    & updatePlayerPositions
     & updateBombs currentTime 
     & updateExpiredExplosions currentTime
 
-updatePlayerDeltaY :: Int -> Float -> GameState -> GameState
-updatePlayerDeltaY pid deltaY gs = gs { players = players' }
-  where
-    players' = case safeIndex pid gs.players of
-      Just p -> replace ((p { y = deltaY * p.speed + p.y }) :: Player) pid gs.players
-      Nothing -> gs.players
+-- updatePlayerDeltaY :: Int -> Float -> GameState -> GameState
+-- updatePlayerDeltaY pid deltaY gs = gs { players = players' }
+--   where
+--     players' = case safeIndex pid gs.players of
+--       Just p -> replace ((p { y = deltaY * p.speed + p.y }) :: Player) pid gs.players
+--       Nothing -> gs.players
 
-updatePlayerDeltaX :: Int -> Float -> GameState -> GameState
-updatePlayerDeltaX pid deltaX gs = gs { players = players' }
-  where
-    players' = case safeIndex pid gs.players of
-      Just p -> replace ((p { x = deltaX * p.speed + p.x }) :: Player) pid gs.players
-      Nothing -> gs.players
+-- updatePlayerDeltaX :: Int -> Float -> GameState -> GameState
+-- updatePlayerDeltaX pid deltaX gs = gs { players = players' }
+--   where
+--     players' = case safeIndex pid gs.players of
+--       Just p -> replace ((p { x = deltaX * p.speed + p.x }) :: Player) pid gs.players
+--       Nothing -> gs.players
 
 initBomb :: Int -> Int -> Int -> Int -> Int -> IO Bomb
 initBomb pid x y maxTime radius = do
@@ -459,19 +464,33 @@ updatePlayerBomb pid delta gs = do
   let p = safeIndex pid gs.players
   case p of
     Just pl -> if pl.currentBombs < pl.maxBombs then do
-      bomb <- initBomb pl.id (floor pl.x) (floor pl.y) 3 pl.bombRange
+      bomb <- initBomb pl.id (round pl.x) (round pl.y) 3 pl.bombRange
       let players' = replace ((pl { currentBombs = pl.currentBombs + delta }) :: Player) pid gs.players
       return gs { players = players', bombs = bomb : gs.bombs }
       else return gs
     Nothing -> return gs
 
+updatePlayerDelta :: Int -> Int -> Int -> GameState -> GameState
+updatePlayerDelta pid dx dy gs = gs { players = players' }
+  where
+    players' = case safeIndex pid gs.players of
+      Just p -> replace ((p { deltaX = dx, deltaY = dy }) :: Player) pid gs.players
+      Nothing -> gs.players
+
+updatePlayerPosition :: Player -> Player
+updatePlayerPosition p = p { x = p.x + fromIntegral p.deltaX * p.speed, y = p.y + fromIntegral p.deltaY * p.speed }
+
+updatePlayerPositions :: GameState -> GameState
+updatePlayerPositions gs = gs { players = map updatePlayerPosition gs.players }
+
 parseClientRequest :: Int -> ClientRequest -> GameState -> IO GameState
 parseClientRequest pid cr gs
   | gs.isGameOver || not gs.isGameStarted = return gs
-  | cr.action == "up" = return (updatePlayerDeltaY pid (-1) gs)
-  | cr.action == "down" = return (updatePlayerDeltaY pid 1 gs)
-  | cr.action == "left" = return (updatePlayerDeltaX pid (-1) gs)
-  | cr.action == "right" = return (updatePlayerDeltaX pid 1 gs)
+  | cr.action == "up" = return (updatePlayerDelta pid (-1) 0 gs)
+  | cr.action == "down" = return (updatePlayerDelta pid 1 0 gs)
+  | cr.action == "left" = return (updatePlayerDelta pid 0 (-1) gs)
+  | cr.action == "right" = return (updatePlayerDelta pid 0 1 gs)
+  | cr.action == "stop" = return (updatePlayerDelta pid 0 0 gs)
   | cr.action == "bomb" = updatePlayerBomb pid 1 gs
   | otherwise = return gs
 
@@ -672,6 +691,7 @@ viewModel m =
         , H.button_ [H.onClick (SendMessage (jsonRequest "down"))] [M.text "Down"]
         , H.button_ [H.onClick (SendMessage (jsonRequest "left"))] [M.text "Left"]
         , H.button_ [H.onClick (SendMessage (jsonRequest "right"))] [M.text "Right"]
+        , H.button_ [H.onClick (SendMessage (jsonRequest "stop"))] [M.text "Stop"]
         , H.button_ [H.onClick (SendMessage (jsonRequest "bomb"))] [M.text "Bomb"]
        ]
     -- , H.div_
