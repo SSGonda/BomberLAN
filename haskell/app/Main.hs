@@ -26,7 +26,6 @@ import           Miso.String (ToMisoString, MisoString)
 import qualified Miso.String as MS
 import Data.Time (UTCTime, getCurrentTime, nominalDiffTimeToSeconds, diffUTCTime)
 import System.Random (getStdRandom, randomR)
-import Control.Lens ((^?), (.~), element)
 import Data.List (partition)
 
 import Data.Aeson (ToJSON, FromJSON, encode, decode)
@@ -289,10 +288,10 @@ gameLoop state = forever $ do
   modifyMVar_ state $ \s -> do
     let gs = s.gameState
 
-    gs' <-  
-      if not gs.isGameStarted && (numClients s >= gs.maxPlayers) then return gs { isGameStarted = True, gameStartTime = currentTime } -- start the game
-      else if gs.isGameOver || not gs.isGameStarted then return gs -- game not started or game over
-      else updateGameState currentTime s.gameState -- update game
+    let gs'
+          | not gs.isGameStarted && (numClients s >= gs.maxPlayers) = gs { isGameStarted = True, gameStartTime = currentTime } -- start the game
+          | gs.isGameOver || not gs.isGameStarted = gs -- game not started or game over
+          | otherwise = updateGameState currentTime gs -- update game
     
     let s' = (s { gameState = gs' }) :: ServerState
 
@@ -306,8 +305,100 @@ gameLoop state = forever $ do
     return s'
   threadDelay 16667 -- 16.667 ms to microseconds, 1000 ms / 60 frames
 
+initExplosion :: UTCTime -> Int -> Int -> Explosion
+initExplosion currentTime x y = Explosion {
+    timePlaced = currentTime,
+    x = x,
+    y = y
+  }
+
+safeIndex :: Int -> [a] -> Maybe a
+safeIndex _ [] = Nothing
+safeIndex 0 (x' : _) = Just x'
+safeIndex index (_ : xs) = safeIndex (index - 1) xs
+
+safeGridIndex :: Int -> Int -> [[a]] -> Maybe a
+safeGridIndex i j grid = a
+  where
+    row = safeIndex i grid
+    a = case row of
+      Just r -> safeIndex j r
+      Nothing -> Nothing
+
+replace :: a -> Int -> [a] -> [a]
+replace _ _ [] = []
+replace a 0 (_ : xs) = a : xs
+replace a index (x' : xs) = x' : replace a (index - 1) xs
+
+gridReplace :: a -> Int -> Int -> [[a]] -> [[a]]
+gridReplace a i j grid = grid'
+  where
+    row = case safeIndex i grid of
+      Just r -> Just (replace a j r)
+      Nothing -> Nothing
+    grid' = case row of
+      Just r -> replace r i grid
+      Nothing -> grid
+
+explosionPositions :: [(Int, Int)]
+explosionPositions = [(0, 0), (0, 1), (1, 0), (0, -1), (-1, 0)]
+
+explodeCoord :: (Int, Int) -> UTCTime -> GameState -> GameState
+explodeCoord (x, y) currentTime gs = gs { grid = grid', bombs = bombs', powerups = powerups', explosions = explosions' }
+  where
+    categorizeBlocks :: [(Int, Int)] -> [[Int]] -> ([(Int, Int)], [(Int, Int)])
+    categorizeBlocks [] _ = ([], [])
+    categorizeBlocks coords grd = foldr categorizeBlock ([], []) coords
+      where
+        categorizeBlock :: (Int, Int) -> ([(Int, Int)], [(Int, Int)]) -> ([(Int, Int)], [(Int, Int)])
+        categorizeBlock (i, j) (explodables', softs') = case safeGridIndex i j grd of
+          Just 0 -> ((i, j) : explodables', softs')
+          Just 1 -> (explodables', (i, j) : softs')
+          _ -> (explodables', softs')
+    
+    removeSoft :: [(Int, Int)] -> [[Int]] -> [[Int]]
+    removeSoft [] grd = grd
+    removeSoft ((i, j) : coords) grd = removeSoft coords (gridReplace 0 i j grd)
+    
+    placeExplosives :: [(Int, Int)] -> [Explosion] -> [Explosion]
+    placeExplosives [] es = es
+    placeExplosives ((i, j) : coords) es = Explosion { timePlaced = currentTime, x = i, y = j } : placeExplosives coords es
+
+    detonateBombs :: [(Int, Int)] -> [Bomb] -> [Bomb]
+    detonateBombs [] bs = bs
+    detonateBombs _ [] = []
+    detonateBombs (coord : coords) bs = detonateBombs coords (detonateBomb coord bs)
+      where
+        detonateBomb :: (Int, Int) -> [Bomb] -> [Bomb]
+        detonateBomb _ [] = []
+        detonateBomb (i, j) (b : bs')
+          | b.x == i && b.y == j = b { maxTime = 0 } : bs' -- TODO HORRIBLE HACK TO MAKE A BOMB EXPLODE ON THE NEXT TICK, which is at least 16 ms
+          | otherwise = b : detonateBomb (i, j) bs'
+    
+    removePowerups :: [(Int, Int)] -> [Powerup] -> [Powerup]
+    removePowerups [] ps = ps
+    removePowerups _ [] = []
+    removePowerups ((i, j) : coords) ps = removePowerups coords (filter (\p -> p.x /= i && p.y /= j) ps)
+
+    (explodables, softs) = categorizeBlocks (map (\(i, j) -> (i + x, j + y)) explosionPositions) gs.grid
+
+    grid' = removeSoft softs gs.grid
+    bombs' = detonateBombs explodables gs.bombs
+    powerups' = removePowerups explodables gs.powerups
+    explosions' = placeExplosives explodables gs.explosions
+    -- TODO add handling for damaging players
+
+explodeCoords :: [(Int, Int)] -> UTCTime -> GameState -> GameState
+explodeCoords [] _ gs = gs
+explodeCoords (coord : coords) currentTime gs = explodeCoords coords currentTime gs'
+  where
+    gs' = explodeCoord coord currentTime gs
+
+updateExpiredExplosions :: UTCTime -> GameState -> GameState
+updateExpiredExplosions currentTime gs = gs { explosions = filter (\e -> not (isExpired currentTime e.timePlaced 1)) gs.explosions }
+
 updateBombs :: UTCTime -> GameState -> GameState
-updateBombs currentTime gs = gs { bombs = active, players = removeBombs expired gs.players } 
+updateBombs currentTime gs = gs''
   where
     (expired, active) = partition (\b -> isExpired currentTime b.timePlaced b.maxTime) gs.bombs
 
@@ -324,24 +415,31 @@ updateBombs currentTime gs = gs { bombs = active, players = removeBombs expired 
       where 
         ps' = removeBomb b ps
 
+    coordsToExplode = map (\b -> (b.x, b.y)) expired
+    gs' = gs { bombs = active, players = removeBombs expired gs.players } -- remove bombs from gamestate and decrement player active bombs
+    gs'' = explodeCoords coordsToExplode currentTime gs' -- add explosions, and do relevant explosion behaviour in gamestate
+
 isExpired :: UTCTime -> UTCTime -> Int -> Bool
 isExpired t1 t2 offset = abs (nominalDiffTimeToSeconds (diffUTCTime t1 t2)) >= fromIntegral offset
 
-updateGameState :: UTCTime -> GameState -> IO GameState
-updateGameState currentTime gs = return (updateBombs currentTime gs)
+updateGameState :: UTCTime -> GameState -> GameState
+updateGameState currentTime gs = 
+  gs
+    & updateBombs currentTime 
+    & updateExpiredExplosions currentTime
 
 updatePlayerDeltaY :: Int -> Float -> GameState -> GameState
 updatePlayerDeltaY pid deltaY gs = gs { players = players' }
   where
-    players' = case gs.players ^? element pid of
-      Just p -> gs.players & element pid Control.Lens..~ ((p { y = deltaY * p.speed + p.y }) :: Player)
+    players' = case safeIndex pid gs.players of
+      Just p -> replace ((p { y = deltaY * p.speed + p.y }) :: Player) pid gs.players
       Nothing -> gs.players
 
 updatePlayerDeltaX :: Int -> Float -> GameState -> GameState
 updatePlayerDeltaX pid deltaX gs = gs { players = players' }
   where
-    players' = case gs.players ^? element pid of
-      Just p -> gs.players & element pid Control.Lens..~ ((p { x = deltaX * p.speed + p.x }) :: Player)
+    players' = case safeIndex pid gs.players of
+      Just p -> replace ((p { x = deltaX * p.speed + p.x }) :: Player) pid gs.players
       Nothing -> gs.players
 
 initBomb :: Int -> Int -> Int -> Int -> Int -> IO Bomb
@@ -357,12 +455,12 @@ initBomb pid x y maxTime radius = do
   }
 
 updatePlayerBomb :: Int -> Int -> GameState -> IO GameState
-updatePlayerBomb pid delta gs= do
-  let p = gs.players ^? element pid
+updatePlayerBomb pid delta gs = do
+  let p = safeIndex pid gs.players
   case p of
     Just pl -> if pl.currentBombs < pl.maxBombs then do
       bomb <- initBomb pl.id (floor pl.x) (floor pl.y) 3 pl.bombRange
-      let players' = gs.players & element pid Control.Lens..~ ((pl { currentBombs = pl.currentBombs + delta }) :: Player)
+      let players' = replace ((pl { currentBombs = pl.currentBombs + delta }) :: Player) pid gs.players
       return gs { players = players', bombs = bomb : gs.bombs }
       else return gs
     Nothing -> return gs
