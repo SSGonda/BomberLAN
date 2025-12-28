@@ -209,9 +209,9 @@ initGameState numPlayers gameDuration = do
     grid = grid
   }
 
-newServerState :: IO ServerState
-newServerState = do
-  initialGameState <- initGameState 2 120 -- TODO unhardcode this
+newServerState :: Int -> Int -> IO ServerState
+newServerState maxPlayers duration = do
+  initialGameState <- initGameState maxPlayers duration
   return ServerState {
     clients = [],
     gameState = initialGameState
@@ -236,10 +236,10 @@ broadcast message s = do
 
 mainServer :: IO ()
 mainServer = do
-    initialState <- newServerState
+    initialState <- newServerState 2 120 -- TODO unhardcode this
     state <- newMVar initialState
     putStrLn "Server Running"
-    WS.runServer "127.0.0.1" 15000 $ application state -- Port Hardcoded as per Phase 2 specs
+    WS.runServer "127.0.0.1" 15000 $ application state -- TODO unhardcode this Port Hardcoded as per Phase 2 specs
 
 application state pending = do
     conn <- WS.acceptRequest pending
@@ -269,7 +269,7 @@ talk conn state (user, _) = forever $ do
     case (decode msg :: Maybe ClientRequest) of
       Just cr -> do
         modifyMVar_ state $ \s -> do
-          let gs = parseClientRequest user cr s.gameState
+          gs <- parseClientRequest user cr s.gameState
           let s' = (s { gameState = gs }) :: ServerState
 
           broadcast (encode ServerResponse {
@@ -296,22 +296,37 @@ updatePlayerDeltaX pid deltaX gs = gs { players = players' }
       Just p -> gs.players & element pid Control.Lens..~ ((p { x = deltaX * p.speed + p.x }) :: Player)
       Nothing -> gs.players
 
-updatePlayerBomb :: Int -> GameState -> GameState
-updatePlayerBomb pid gs = gs { players = players' }
-  where
-    players' = case gs.players ^? element pid of
-      Just p -> gs.players & element pid Control.Lens..~ ((p { currentBombs = p.currentBombs + 1 }) :: Player)
-      Nothing -> gs.players
-    -- TODO Update bombs
+initBomb :: Int -> Int -> Int -> Int -> Int -> IO Bomb
+initBomb pid x y maxTime radius = do
+  currentTime <- getCurrentTime
+  return Bomb {
+    player = pid,
+    x = x,
+    y = y,
+    timePlaced = currentTime,
+    maxTime = maxTime,
+    radius = radius
+  }
 
-parseClientRequest :: Int -> ClientRequest -> GameState -> GameState
+updatePlayerBomb :: Int -> GameState -> IO GameState
+updatePlayerBomb pid gs = do
+  let p = gs.players ^? element pid
+  case p of
+    Just pl -> if pl.currentBombs < pl.maxBombs then do
+      bomb <- initBomb pl.id (floor pl.x) (floor pl.y) 3 pl.bombRange
+      let players' = gs.players & element pid Control.Lens..~ ((pl { currentBombs = pl.currentBombs + 1 }) :: Player)
+      return gs { players = players', bombs = bomb : gs.bombs }    
+      else return gs
+    Nothing -> return gs 
+  
+parseClientRequest :: Int -> ClientRequest -> GameState -> IO GameState
 parseClientRequest pid cr gs
-  | cr.action == "up" = updatePlayerDeltaY pid (-1) gs
-  | cr.action == "down" = updatePlayerDeltaY pid 1 gs
-  | cr.action == "left" = updatePlayerDeltaX pid (-1) gs
-  | cr.action == "right" = updatePlayerDeltaX pid 1 gs
+  | cr.action == "up" = return (updatePlayerDeltaY pid (-1) gs)
+  | cr.action == "down" = return (updatePlayerDeltaY pid 1 gs)
+  | cr.action == "left" = return (updatePlayerDeltaX pid (-1) gs)
+  | cr.action == "right" = return (updatePlayerDeltaX pid 1 gs)
   | cr.action == "bomb" = updatePlayerBomb pid gs
-  | otherwise = gs
+  | otherwise = return gs
 
 -- =-----------------------------------=
 --             CLIENT CODE
