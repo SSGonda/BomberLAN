@@ -35,11 +35,20 @@ import Data.Functor ( (<&>) )
 
 -- Check whether to run a server or client
 
+mainNothing :: IO ()
+mainNothing = do
+  putStrLn "Invalid Arguments"
+
 main :: IO ()
 main = do
     args <- getArgs
     let mainToRun = case args of
-            ["--host"] -> mainServer -- TODO ASK WHETHER THIS IS CORRECT
+            [numPlayers, gameDura, "--host", port] -> do
+              let numPlayersInt = read numPlayers :: Int
+              let gameDuraInt = read gameDura :: Int
+              if numPlayersInt < 2 || numPlayersInt > 4 || gameDuraInt < 30 || gameDuraInt > 600
+                then mainNothing
+                else mainServer numPlayersInt gameDuraInt (read port :: Int)
             _ -> mainClient
     mainToRun
 
@@ -237,15 +246,15 @@ broadcast message s = do
     print message
     forM_ s.clients $ \(_, conn) -> WS.sendTextData conn message
 
-mainServer :: IO ()
-mainServer = do
-    initialState <- newServerState 2 120 -- TODO unhardcode this
+mainServer :: Int -> Int -> Int -> IO ()
+mainServer numPlayers gameDura port = do
+    initialState <- newServerState numPlayers gameDura
     state <- newMVar initialState
     putStrLn "Server Running"
 
     _ <- forkIO $ gameLoop state
 
-    WS.runServer "127.0.0.1" 15000 $ application state -- TODO unhardcode this Port Hardcoded as per Phase 2 specs
+    WS.runServer "127.0.0.1" port $ application state
 
 application :: MVar ServerState -> WS.PendingConnection -> IO ()
 application state pending = do
