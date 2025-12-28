@@ -51,11 +51,13 @@ class Grid {
     final gridX = position.x.floor();
     final gridY = position.y.floor();
 
-    if (position.x < 0 ||
+    // print("new pos in is walkable: $position");
+
+    if (position.x <= 0 ||
         position.x >= cols ||
-        position.y < 0 ||
+        position.y <= 0 ||
         position.y >= rows) {
-      print("not walkable");
+      // print("not walkable");
       return false;
     }
 

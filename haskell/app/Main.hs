@@ -27,9 +27,10 @@ import           Miso.Lens
 import           Miso.WebSocket
 import           Miso.String (ToMisoString, MisoString)
 import qualified Miso.String as MS
-import Data.Time (UTCTime, getCurrentTime)
+import Data.Time (UTCTime, getCurrentTime, nominalDiffTimeToSeconds, diffUTCTime)
 import System.Random (getStdRandom, randomR)
 import Control.Lens ((^?), (.~), element)
+import Data.List (partition)
 
 import Data.Aeson (ToJSON, FromJSON, encode, decode)
 import qualified Data.ByteString.Lazy as BL
@@ -255,7 +256,7 @@ application state pending = do
         modifyMVar_ state $ \s -> do
             let s' = addClient client s
             print (show (fst client) <> " joined")
-            broadcast (encode ServerResponse { tag = "StateUpdate", gameState = Just sstate.gameState, message = Nothing}) s'
+            WS.sendTextData conn (encode ServerResponse { tag = "ClientJoin", gameState = Nothing, message = Just (show cid)})
             return s'
         talk conn state client
     where
@@ -283,7 +284,7 @@ talk conn state (user, _) = forever $ do
 
           return s'
       Nothing ->
-        readMVar state >>= broadcast (encode ServerResponse { tag = "UserMessage", gameState = Nothing, message = Just (show user <> " : " <> "gave invalid request") } )
+        readMVar state >>= broadcast (encode ServerResponse { tag = "InvalidClientInput", gameState = Nothing, message = Just (show user <> " : " <> "gave invalid request") } )
 
 gameLoop :: MVar ServerState -> IO ()
 gameLoop state = forever $ do
@@ -292,7 +293,7 @@ gameLoop state = forever $ do
     let gs = s.gameState
 
     gs' <-  
-      if not gs.isGameStarted && (numClients s >= gs.maxPlayers) then return gs { isGameStarted = True, gameStartTime = currentTime } -- game not started
+      if not gs.isGameStarted && (numClients s >= gs.maxPlayers) then return gs { isGameStarted = True, gameStartTime = currentTime } -- start the game
       else if gs.isGameOver || not gs.isGameStarted then return gs -- game not started or game over
       else updateGameState currentTime s.gameState -- update game
     
@@ -301,15 +302,36 @@ gameLoop state = forever $ do
     unless (gs == gs') $ do
       broadcast (encode ServerResponse {
         tag = "StateUpdate",
-        gameState = Just gs,
+        gameState = Just gs',
         message = Nothing
       }) s'
 
     return s'
   threadDelay 16667 -- 16.667 ms to microseconds, 1000 ms / 60 frames
 
+updateBombs :: UTCTime -> GameState -> GameState
+updateBombs currentTime gs = gs { bombs = active, players = removeBombs expired gs.players } 
+  where
+    (expired, active) = partition (\b -> isExpired currentTime b.timePlaced b.maxTime) gs.bombs
+
+    removeBomb :: Bomb -> [Player] -> [Player]
+    removeBomb b [] = []
+    removeBomb b (p : ps)
+      | b.player == p.id = p { currentBombs = p.currentBombs - 1 } : ps
+      | otherwise = p : removeBomb b ps
+    
+    removeBombs :: [Bomb] -> [Player] -> [Player]
+    removeBombs [] ps = ps
+    removeBombs _ [] = []
+    removeBombs (b : bs) ps = removeBombs bs ps'
+      where 
+        ps' = removeBomb b ps
+
+isExpired :: UTCTime -> UTCTime -> Int -> Bool
+isExpired t1 t2 offset = abs (nominalDiffTimeToSeconds (diffUTCTime t1 t2)) >= fromIntegral offset
+
 updateGameState :: UTCTime -> GameState -> IO GameState
-updateGameState currentTime = return
+updateGameState currentTime gs = return (updateBombs currentTime gs)
 
 updatePlayerDeltaY :: Int -> Float -> GameState -> GameState
 updatePlayerDeltaY pid deltaY gs = gs { players = players' }
@@ -337,13 +359,13 @@ initBomb pid x y maxTime radius = do
     radius = radius
   }
 
-updatePlayerBomb :: Int -> GameState -> IO GameState
-updatePlayerBomb pid gs = do
+updatePlayerBomb :: Int -> Int -> GameState -> IO GameState
+updatePlayerBomb pid delta gs= do
   let p = gs.players ^? element pid
   case p of
     Just pl -> if pl.currentBombs < pl.maxBombs then do
       bomb <- initBomb pl.id (floor pl.x) (floor pl.y) 3 pl.bombRange
-      let players' = gs.players & element pid Control.Lens..~ ((pl { currentBombs = pl.currentBombs + 1 }) :: Player)
+      let players' = gs.players & element pid Control.Lens..~ ((pl { currentBombs = pl.currentBombs + delta }) :: Player)
       return gs { players = players', bombs = bomb : gs.bombs }
       else return gs
     Nothing -> return gs
@@ -355,7 +377,7 @@ parseClientRequest pid cr gs
   | cr.action == "down" = return (updatePlayerDeltaY pid 1 gs)
   | cr.action == "left" = return (updatePlayerDeltaX pid (-1) gs)
   | cr.action == "right" = return (updatePlayerDeltaX pid 1 gs)
-  | cr.action == "bomb" = updatePlayerBomb pid gs
+  | cr.action == "bomb" = updatePlayerBomb pid 1 gs
   | otherwise = return gs
 
 -- =-----------------------------------=
