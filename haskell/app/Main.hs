@@ -9,22 +9,19 @@
 {-# LANGUAGE DuplicateRecordFields #-}
 {-# LANGUAGE FlexibleContexts #-}
 module Main where
-import Data.Char (isPunctuation, isSpace)
 import Data.Text (Text)
 import Control.Exception (finally)
 import Control.Monad (forM_, forever, unless)
 import Control.Concurrent (MVar, newMVar, modifyMVar_, modifyMVar, readMVar, threadDelay, forkIO)
-import qualified Data.Text as T
-import qualified Data.Text.IO as T
 import qualified Network.WebSockets as WS
 import System.Environment (getArgs)
-import Debug.Trace (trace)
 import qualified Miso as M
 import qualified Miso.Html as H
 import qualified Miso.Html.Property as P
-import           GHC.Generics
-import           Miso.Lens
-import           Miso.WebSocket
+import GHC.Generics ( Generic )
+import Miso.Lens ( (&), (%=), (.=), (^.), lens, use, Lens )
+import Miso.WebSocket
+    ( emptyWebSocket, close, connectText, sendText, Closed, WebSocket )
 import           Miso.String (ToMisoString, MisoString)
 import qualified Miso.String as MS
 import Data.Time (UTCTime, getCurrentTime, nominalDiffTimeToSeconds, diffUTCTime)
@@ -315,7 +312,7 @@ updateBombs currentTime gs = gs { bombs = active, players = removeBombs expired 
     (expired, active) = partition (\b -> isExpired currentTime b.timePlaced b.maxTime) gs.bombs
 
     removeBomb :: Bomb -> [Player] -> [Player]
-    removeBomb b [] = []
+    removeBomb _ [] = []
     removeBomb b (p : ps)
       | b.player == p.id = p { currentBombs = p.currentBombs - 1 } : ps
       | otherwise = p : removeBomb b ps
