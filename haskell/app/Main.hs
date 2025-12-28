@@ -160,7 +160,9 @@ makePlayers :: Int -> [Player]
 makePlayers numPlayers = map positionToPlayer (take numPlayers initPlayerPositions)
 
 emptyGrid :: [[Int]]
-emptyGrid = [[2,2,2,2,2,2,2,2,2,2,2,2,2,2,2],
+emptyGrid = [[2,2,2,2,2,2,2,2,2,2,2,2,2,2,2], -- Legend: 3 is a hardcoded spot that will be 0 after randomization
+            [2,3,0,0,0,0,0,0,0,0,0,0,0,3,2],  -- 2 is a hard block
+            [2,0,2,0,2,0,2,0,2,0,2,0,2,0,2],  -- 0 all have a chance to become 1, a soft block after randomizaiton
             [2,0,0,0,0,0,0,0,0,0,0,0,0,0,2],
             [2,0,2,0,2,0,2,0,2,0,2,0,2,0,2],
             [2,0,0,0,0,0,0,0,0,0,0,0,0,0,2],
@@ -169,9 +171,7 @@ emptyGrid = [[2,2,2,2,2,2,2,2,2,2,2,2,2,2,2],
             [2,0,2,0,2,0,2,0,2,0,2,0,2,0,2],
             [2,0,0,0,0,0,0,0,0,0,0,0,0,0,2],
             [2,0,2,0,2,0,2,0,2,0,2,0,2,0,2],
-            [2,0,0,0,0,0,0,0,0,0,0,0,0,0,2],
-            [2,0,2,0,2,0,2,0,2,0,2,0,2,0,2],
-            [2,0,0,0,0,0,0,0,0,0,0,0,0,0,2],
+            [2,3,0,0,0,0,0,0,0,0,0,0,0,3,2],
             [2,2,2,2,2,2,2,2,2,2,2,2,2,2,2]]
 
 randomChanceEachRow :: [Int] -> IO [Int]
@@ -185,6 +185,7 @@ randomChanceEachRow = mapM randSoft
           return 1
         else
           return 0
+      3 -> return 0
       x -> return x
 
 initGrid :: IO [[Int]]
@@ -310,6 +311,7 @@ parseClientRequest pid cr gs
   | cr.action == "left" = updatePlayerDeltaX pid (-1) gs
   | cr.action == "right" = updatePlayerDeltaX pid 1 gs
   | cr.action == "bomb" = updatePlayerBomb pid gs
+  | otherwise = gs
 
 -- =-----------------------------------=
 --             CLIENT CODE
@@ -563,7 +565,4 @@ messageHeader messages = concat
   ]
 -----------------------------------------------------------------------------
 mainClient :: IO ()
-mainClient = M.run $ M.startApp (websocketComponent 0) -- 0 is the socket id
-
-
-
+mainClient = M.run $ M.startApp (websocketComponent 0)
