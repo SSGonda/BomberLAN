@@ -36,6 +36,10 @@ class Grid {
     for (int i = 1; i < rows - 1; i++) {
       for (int j = 1; j < cols - 1; j++) {
         if (cells[i][j] == CellType.empty &&
+            (i, j) != (1, 1) &&
+            (i, j) != (11, 1) &&
+            (i, j) != (1, 13) &&
+            (i, j) != (11, 13) &&
             _random.nextDouble() < GameConstants.softBlockSpawnChance) {
           cells[i][j] = CellType.softBlock;
         }
@@ -51,6 +55,7 @@ class Grid {
         position.x >= cols ||
         position.y < 0 ||
         position.y >= rows) {
+      print("not walkable");
       return false;
     }
 
@@ -90,9 +95,9 @@ class Grid {
     // starting positions for players
     final startPositions = [
       Point<double>(1.50, 1.50), // Top-left
-      Point<double>(cols - 2.50, 1.50), // Top-right
-      Point<double>(1.50, rows - 2.50), // Bottom-left
-      Point<double>(cols - 2.50, rows - 2.50), // Bottom-right
+      Point<double>(cols - 1.50, 1.50), // Top-right
+      Point<double>(1.50, rows - 1.50), // Bottom-left
+      Point<double>(cols - 1.50, rows - 1.50), // Bottom-right
     ];
 
     return startPositions[playerNumber % startPositions.length];

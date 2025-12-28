@@ -47,12 +47,15 @@ class Player {
 
   Point<double> calculateNewPos() {
     var newPos = preciseAdd(position, velocity);
-    // print(newPos);
+    // (velocity + Point(GameConstants.playerWidth, GameConstants.playerWidth)),
     return newPos;
   }
 
   void updatePosition() {
-    position += velocity;
+    var newPos = preciseAdd(position, (velocity));
+
+    position = newPos;
+    print(position);
   }
 
   bool canPlantBomb() {
@@ -91,6 +94,8 @@ class Player {
       'id': id,
       'x': position.x,
       'y': position.y,
+      'deltaX': velocity.x,
+      'deltaY': velocity.y,
       'maxBombs': maxBombs,
       'currentBombs': currentBombs,
       'bombRange': bombRange,

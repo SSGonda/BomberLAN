@@ -51,22 +51,11 @@ class GameState {
     }
 
     final playerNumberStr = playerQueue.removeFirst();
-    // final playerNumber = int.parse(playerNumberStr.substring(1));
     final playerNumber = players.length;
 
-    final startPosition = grid.getPlayerStartPosition(
-      playerNumber - 1,
-      maxPlayers,
-    );
+    final startPosition = grid.getPlayerStartPosition(playerNumber, maxPlayers);
 
-    // players[playerId] = Player(
-    players.add(
-      Player(
-        id: playerId,
-        // playerNumber: playerNumber,
-        startingPosition: startPosition,
-      ),
-    );
+    players.add(Player(id: playerId, startingPosition: startPosition));
 
     connectedPlayers++;
 
@@ -218,8 +207,10 @@ class GameState {
     for (final player in players) {
       if (player.isAlive) {
         if (grid.isWalkable(player.calculateNewPos())) {
+          // print('walkable');
           player.updatePosition();
         }
+        print(player.position);
 
         //  powerup collisions
         final playerCell = Point<int>(
