@@ -87,27 +87,40 @@ class GameServer {
       final json = jsonDecode(message);
       print(json);
       final gameMessage = GameMessage.fromJson(json);
+      print(gameMessage.tag);
 
       switch (gameMessage.tag) {
-        case 'player_join':
+        case 'ClientJoin':
           final joinMessage = gameMessage as PlayerJoinMessage;
           _handlePlayerJoin(webSocket, joinMessage);
           break;
 
-        case 'player_move':
-          final moveMessage = gameMessage as PlayerMoveMessage;
-          _handlePlayerMove(moveMessage);
-          break;
-
-        case 'plant_bomb':
-          final bombMessage = gameMessage as PlantBombMessage;
-          _handlePlantBomb(bombMessage);
-          break;
-
-        case 'player_quit':
-          final quitMessage = gameMessage as PlayerQuitMessage;
-          _handlePlayerQuit(quitMessage);
-          break;
+        case 'ClientUpdate':
+          final clientUpdateMessage = gameMessage as ClientUpdateMessage;
+          if (clientUpdateMessage.action == "bomb") {
+            final bombMessage = gameMessage as PlantBombMessage;
+            _handlePlantBomb(bombMessage);
+            break;
+          } else {
+            final moveMessage = PlayerMoveMessage.fromJson(json);
+            print('goint to move message');
+            _handlePlayerMove(moveMessage);
+            break;
+          }
+        // case 'player_move':
+        //   final moveMessage = gameMessage as PlayerMoveMessage;
+        //   _handlePlayerMove(moveMessage);
+        //   break;
+        //
+        // case 'plant_bomb':
+        //   final bombMessage = gameMessage as PlantBombMessage;
+        //   _handlePlantBomb(bombMessage);
+        //   break;
+        //
+        // case 'player_quit':
+        //   final quitMessage = gameMessage as PlayerQuitMessage;
+        //   _handlePlayerQuit(quitMessage);
+        //   break;
       }
     } catch (e) {
       print('Error handling message: $e');

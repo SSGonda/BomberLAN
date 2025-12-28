@@ -9,8 +9,10 @@ abstract class GameMessage {
     final tag = json['tag'] as String;
 
     switch (tag) {
-      case 'player_join':
+      case 'ClientJoin':
         return PlayerJoinMessage.fromJson(json);
+      case 'ClientUpdate':
+        return ClientUpdateMessage.fromJson(json);
       case 'player_move':
         return PlayerMoveMessage.fromJson(json);
       case 'plant_bomb':
@@ -24,7 +26,7 @@ abstract class GameMessage {
 }
 
 class PlayerJoinMessage extends GameMessage {
-  PlayerJoinMessage() : super('player_join');
+  PlayerJoinMessage() : super('ClientJoin');
 
   @override
   Map<String, dynamic> toJson() {
@@ -33,6 +35,26 @@ class PlayerJoinMessage extends GameMessage {
 
   factory PlayerJoinMessage.fromJson(Map<String, dynamic> json) {
     return PlayerJoinMessage();
+  }
+}
+
+class ClientUpdateMessage extends GameMessage {
+  final int playerId;
+  final String action;
+
+  ClientUpdateMessage({required this.playerId, required this.action})
+    : super('ClientUpdate');
+
+  @override
+  Map<String, dynamic> toJson() {
+    return {'tag': tag, 'playerId': playerId, 'action': action};
+  }
+
+  factory ClientUpdateMessage.fromJson(Map<String, dynamic> json) {
+    return ClientUpdateMessage(
+      playerId: json['playerId'] as int,
+      action: json['action'] as String,
+    );
   }
 }
 
@@ -52,7 +74,7 @@ class PlayerMoveMessage extends GameMessage {
     print('went here');
     return PlayerMoveMessage(
       playerId: json['playerId'] as int,
-      direction: json['direction'] as String,
+      direction: json['action'] as String,
     );
   }
 }

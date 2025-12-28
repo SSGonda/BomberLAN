@@ -46,16 +46,42 @@ class Player {
   }
 
   Point<double> calculateNewPos() {
-    var newPos = preciseAdd(position, velocity);
-    // (velocity + Point(GameConstants.playerWidth, GameConstants.playerWidth)),
-    return newPos;
+    if (velocity.x < 0 || velocity.y < 0) {
+      if (velocity.x < 0) {
+        var newPos = preciseAdd(
+          position,
+          (velocity - Point(GameConstants.playerWidth, 0)),
+        );
+        return newPos;
+      } else {
+        var newPos = preciseAdd(
+          position,
+          (velocity - Point(0, GameConstants.playerWidth)),
+        );
+        return newPos;
+      }
+    } else {
+      if (velocity.x > 0) {
+        var newPos = preciseAdd(
+          position,
+          (velocity + Point(GameConstants.playerWidth, 0)),
+        );
+        return newPos;
+      } else {
+        var newPos = preciseAdd(
+          position,
+          (velocity + Point(0, GameConstants.playerWidth)),
+        );
+        return newPos;
+      }
+    }
   }
 
   void updatePosition() {
     var newPos = preciseAdd(position, (velocity));
 
     position = newPos;
-    print(position);
+    // print(position);
   }
 
   bool canPlantBomb() {

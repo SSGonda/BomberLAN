@@ -206,11 +206,12 @@ class GameState {
     // update player positions
     for (final player in players) {
       if (player.isAlive) {
+        // print(player.position);
         if (grid.isWalkable(player.calculateNewPos())) {
           // print('walkable');
           player.updatePosition();
         }
-        print(player.position);
+        // print(player.position);
 
         //  powerup collisions
         final playerCell = Point<int>(
