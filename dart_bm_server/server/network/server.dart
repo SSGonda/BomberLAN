@@ -98,7 +98,7 @@ class GameServer {
         case 'ClientUpdate':
           final clientUpdateMessage = gameMessage as ClientUpdateMessage;
           if (clientUpdateMessage.action == "bomb") {
-            final bombMessage = gameMessage as PlantBombMessage;
+            final bombMessage = PlantBombMessage.fromJson(json);
             _handlePlantBomb(bombMessage);
             break;
           } else {
