@@ -11,7 +11,7 @@
 module Main where
 import Data.Text (Text)
 import Control.Exception (finally)
-import Control.Monad (forM_, forever, unless)
+import Control.Monad (forM_, forever, unless, foldM)
 import Control.Concurrent (MVar, newMVar, modifyMVar_, modifyMVar, readMVar, threadDelay, forkIO)
 import qualified Network.WebSockets as WS
 import System.Environment (getArgs)
@@ -30,6 +30,8 @@ import Data.List (partition)
 
 import Data.Aeson (ToJSON, FromJSON, encode, decode)
 import qualified Data.ByteString.Lazy as BL
+import Data.Ix (Ix(range))
+import Data.Functor ( (<&>) )  
 
 -- Check whether to run a server or client
 
@@ -292,10 +294,10 @@ gameLoop state = forever $ do
   modifyMVar_ state $ \s -> do
     let gs = s.gameState
 
-    let gs'
-          | not gs.isGameStarted && (numClients s >= gs.maxPlayers) = gs { isGameStarted = True, gameStartTime = currentTime } -- start the game
-          | gs.isGameOver || not gs.isGameStarted = gs -- game not started or game over
-          | otherwise = updateGameState currentTime gs -- update game
+    gs' <-
+      if not gs.isGameStarted && (numClients s >= gs.maxPlayers) then return gs { isGameStarted = True, gameStartTime = currentTime } -- start the game
+      else if gs.isGameOver || not gs.isGameStarted then return gs -- game not started or game over
+      else updateGameState currentTime gs -- update game
 
     let s' = (s { gameState = gs' }) :: ServerState
 
@@ -344,11 +346,37 @@ gridReplace a i j grid = grid'
       Just r -> replace r i grid
       Nothing -> grid
 
-explosionPositions :: [(Int, Int)]
-explosionPositions = [(0, 0), (0, 1), (1, 0), (0, -1), (-1, 0)]
+explosionPositions :: Int -> [(Int, Int)]
+explosionPositions 0 = [(0, 0)]
+explosionPositions r = [(0, 0)]
+  <> range ((0, 1), (0, r))
+  <> range ((1, 0), (r, 0))
+  <> range ((-r, 0), (-1, 0))
+  <> range ((0, -r), (0, -1))
 
-explodeCoord :: (Int, Int) -> UTCTime -> GameState -> GameState
-explodeCoord (x, y) currentTime gs = gs { grid = grid', bombs = bombs', powerups = powerups', explosions = explosions' }
+spawnPowerup :: Text -> Int -> Int -> [Powerup] -> [Powerup]
+spawnPowerup name x y ps = Powerup { name = name, x = x, y = y } : ps
+
+spawnPowerupWithProbability :: [Powerup] -> Int -> Int -> Int -> IO [Powerup]
+spawnPowerupWithProbability ps p x y = do
+  r <- getStdRandom (randomR (0, 99))
+  if r < p then do
+    r' <- getStdRandom (randomR (0, 2))
+    if r' == 0 then
+      return (spawnPowerup "fireup" x y ps)
+    else if r' == 1 then
+      return (spawnPowerup "bombup" x y ps)
+    else if r' == 2 then
+      return (spawnPowerup "speedup" x y ps)
+    else
+      return ps
+  else
+    return ps
+
+explodeCoord :: Int -> (Int, Int) -> UTCTime -> GameState -> IO GameState
+explodeCoord r (x, y) currentTime gs = do
+  powerups'' <- foldM (\p (i, j) -> spawnPowerupWithProbability p 100 i j) powerups' softs
+  return gs { grid = grid', bombs = bombs', powerups = powerups'', explosions = explosions' }
   where
     categorizeBlocks :: [(Int, Int)] -> [[Int]] -> ([(Int, Int)], [(Int, Int)])
     categorizeBlocks [] _ = ([], [])
@@ -382,9 +410,9 @@ explodeCoord (x, y) currentTime gs = gs { grid = grid', bombs = bombs', powerups
     removePowerups :: [(Int, Int)] -> [Powerup] -> [Powerup]
     removePowerups [] ps = ps
     removePowerups _ [] = []
-    removePowerups ((i, j) : coords) ps = removePowerups coords (filter (\p -> p.x /= i && p.y /= j) ps)
+    removePowerups ((i, j) : coords) ps = removePowerups coords (filter (\p -> p.x /= i || p.y /= j) ps)
 
-    (explodables, softs) = categorizeBlocks (map (\(i, j) -> (i + x, j + y)) explosionPositions) gs.grid
+    (explodables, softs) = categorizeBlocks (map (\(i, j) -> (i + x, j + y)) (explosionPositions r)) gs.grid
 
     grid' = removeSoft softs gs.grid
     bombs' = detonateBombs explodables gs.bombs
@@ -392,11 +420,11 @@ explodeCoord (x, y) currentTime gs = gs { grid = grid', bombs = bombs', powerups
     explosions' = placeExplosives explodables gs.explosions
     -- TODO add handling for damaging players
 
-explodeCoords :: [(Int, Int)] -> UTCTime -> GameState -> GameState
-explodeCoords [] _ gs = gs
-explodeCoords (coord : coords) currentTime gs = explodeCoords coords currentTime gs'
-  where
-    gs' = explodeCoord coord currentTime gs
+explodeCoords :: [(Int, Int, Int)] -> UTCTime -> GameState -> IO GameState
+explodeCoords [] _ gs = return gs
+explodeCoords ((x, y, r) : coords) currentTime gs = do
+  gs' <- explodeCoord r (x, y) currentTime gs
+  explodeCoords coords currentTime gs'
 
 updateExpiredExplosions :: UTCTime -> GameState -> GameState
 updateExpiredExplosions currentTime gs = gs { explosions = filter (\e -> not (isExpired currentTime e.timePlaced 1)) gs.explosions }
@@ -409,13 +437,39 @@ updateExplosionAreas gs = gs { players = playersCheckExplosions gs.players}
 
     playersCheckExplosions :: [Player] -> [Player]
     playersCheckExplosions [] = []
-    playersCheckExplosions (p : ps) = 
+    playersCheckExplosions (p : ps) =
       if playerCollidesWithExplosions p then
         p { isAlive = False } : playersCheckExplosions ps
       else
         p : playersCheckExplosions ps
 
-updateBombs :: UTCTime -> GameState -> GameState
+updatePowerupAreas :: GameState -> GameState
+updatePowerupAreas gs = gs { players = players', powerups = powerups' }
+  where
+    applyPowerupForPlayer :: Powerup -> Player -> Player
+    applyPowerupForPlayer Powerup { name = "fireup" } p = p { bombRange = p.bombRange + 1 }
+    applyPowerupForPlayer Powerup { name = "bombup" } p = p { maxBombs = p.maxBombs + 1 }
+    applyPowerupForPlayer Powerup { name = "speedup" } p = p { speed = p.speed * 1.3 }
+    applyPowerupForPlayer _ p = p
+
+    checkPowerupsForPlayer :: [Powerup] -> Player -> ([Powerup], Player)
+    checkPowerupsForPlayer [] p = ([], p)
+    checkPowerupsForPlayer (pup : pups) p
+      | isCollideWithPlayer 1 p.x p.y pup.x pup.y = (pups, applyPowerupForPlayer pup p)
+      | otherwise =  (pup : pups', p')
+      where
+        (pups', p') = checkPowerupsForPlayer pups p
+
+    checkPlayersForPowerups :: [Powerup] -> [Player] -> ([Powerup], [Player])
+    checkPlayersForPowerups pups [] = (pups, [])
+    checkPlayersForPowerups pups (p : ps) = (pups'', p' : ps')
+      where
+        (pups', p') = checkPowerupsForPlayer pups p
+        (pups'', ps') = checkPlayersForPowerups pups' ps
+    
+    (powerups', players') = checkPlayersForPowerups gs.powerups gs.players
+
+updateBombs :: UTCTime -> GameState -> IO GameState
 updateBombs currentTime gs = gs''
   where
     (expired, active) = partition (\b -> isExpired currentTime b.timePlaced b.maxTime) gs.bombs
@@ -433,20 +487,21 @@ updateBombs currentTime gs = gs''
       where
         ps' = removeBomb b ps
 
-    coordsToExplode = map (\b -> (b.x, b.y)) expired
+    coordsToExplode = map (\b -> (b.x, b.y, b.radius)) expired
     gs' = gs { bombs = active, players = removeBombs expired gs.players } -- remove bombs from gamestate and decrement player active bombs
     gs'' = explodeCoords coordsToExplode currentTime gs' -- add explosions, and do relevant explosion behaviour in gamestate
 
 isExpired :: UTCTime -> UTCTime -> Int -> Bool
 isExpired t1 t2 offset = abs (nominalDiffTimeToSeconds (diffUTCTime t1 t2)) >= fromIntegral offset
 
-updateGameState :: UTCTime -> GameState -> GameState
+updateGameState :: UTCTime -> GameState -> IO GameState
 updateGameState currentTime gs =
   gs
     & updatePlayerPositions
-    & updateBombs currentTime
-    & updateExpiredExplosions currentTime
-    & updateExplosionAreas
+    & updateBombs currentTime 
+    <&> updateExpiredExplosions currentTime 
+    <&> updateExplosionAreas
+    <&> updatePowerupAreas
 
 initBomb :: Int -> Int -> Int -> Int -> Int -> IO Bomb
 initBomb pid x y maxTime radius = do
@@ -500,7 +555,7 @@ updatePlayerPosition gs p = p { x = x'', y = y'' }
     x' = p.x + fromIntegral p.deltaX * p.speed
     y' = p.y + fromIntegral p.deltaY * p.speed
 
-    positionsToCheck = map (\(i, j) -> (i + round x', j + round y')) explosionPositions
+    positionsToCheck = map (\(i, j) -> (i + round x', j + round y')) (explosionPositions 1)
     collideableGridPositions = getCollideable positionsToCheck gs.grid
 
     bombDistances = map (\b -> (distance p.x p.y b.x b.y, distance x' y' b.x b.y)) gs.bombs
