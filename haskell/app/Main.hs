@@ -296,7 +296,7 @@ gameLoop state = forever $ do
           | not gs.isGameStarted && (numClients s >= gs.maxPlayers) = gs { isGameStarted = True, gameStartTime = currentTime } -- start the game
           | gs.isGameOver || not gs.isGameStarted = gs -- game not started or game over
           | otherwise = updateGameState currentTime gs -- update game
-    
+
     let s' = (s { gameState = gs' }) :: ServerState
 
     unless (gs == gs') $ do
@@ -359,11 +359,11 @@ explodeCoord (x, y) currentTime gs = gs { grid = grid', bombs = bombs', powerups
           Just 0 -> ((i, j) : explodables', softs')
           Just 1 -> (explodables', (i, j) : softs')
           _ -> (explodables', softs')
-    
+
     removeSoft :: [(Int, Int)] -> [[Int]] -> [[Int]]
     removeSoft [] grd = grd
     removeSoft ((i, j) : coords) grd = removeSoft coords (gridReplace 0 i j grd)
-    
+
     placeExplosives :: [(Int, Int)] -> [Explosion] -> [Explosion]
     placeExplosives [] es = es
     placeExplosives ((i, j) : coords) es = Explosion { timePlaced = currentTime, x = i, y = j } : placeExplosives coords es
@@ -378,7 +378,7 @@ explodeCoord (x, y) currentTime gs = gs { grid = grid', bombs = bombs', powerups
         detonateBomb (i, j) (b : bs')
           | b.x == i && b.y == j = b { maxTime = 0 } : bs' -- TODO HORRIBLE HACK TO MAKE A BOMB EXPLODE ON THE NEXT TICK, which is at least 16 ms
           | otherwise = b : detonateBomb (i, j) bs'
-    
+
     removePowerups :: [(Int, Int)] -> [Powerup] -> [Powerup]
     removePowerups [] ps = ps
     removePowerups _ [] = []
@@ -401,6 +401,20 @@ explodeCoords (coord : coords) currentTime gs = explodeCoords coords currentTime
 updateExpiredExplosions :: UTCTime -> GameState -> GameState
 updateExpiredExplosions currentTime gs = gs { explosions = filter (\e -> not (isExpired currentTime e.timePlaced 1)) gs.explosions }
 
+updateExplosionAreas :: GameState -> GameState
+updateExplosionAreas gs = gs { players = playersCheckExplosions gs.players}
+  where
+    playerCollidesWithExplosions :: Player -> Bool
+    playerCollidesWithExplosions p = any (\e -> isCollideWithPlayer 1 p.x p.y e.x e.y) gs.explosions
+
+    playersCheckExplosions :: [Player] -> [Player]
+    playersCheckExplosions [] = []
+    playersCheckExplosions (p : ps) = 
+      if playerCollidesWithExplosions p then
+        p { isAlive = False } : playersCheckExplosions ps
+      else
+        p : playersCheckExplosions ps
+
 updateBombs :: UTCTime -> GameState -> GameState
 updateBombs currentTime gs = gs''
   where
@@ -411,12 +425,12 @@ updateBombs currentTime gs = gs''
     removeBomb b (p : ps)
       | b.player == p.id = p { currentBombs = p.currentBombs - 1 } : ps
       | otherwise = p : removeBomb b ps
-    
+
     removeBombs :: [Bomb] -> [Player] -> [Player]
     removeBombs [] ps = ps
     removeBombs _ [] = []
     removeBombs (b : bs) ps = removeBombs bs ps'
-      where 
+      where
         ps' = removeBomb b ps
 
     coordsToExplode = map (\b -> (b.x, b.y)) expired
@@ -427,25 +441,12 @@ isExpired :: UTCTime -> UTCTime -> Int -> Bool
 isExpired t1 t2 offset = abs (nominalDiffTimeToSeconds (diffUTCTime t1 t2)) >= fromIntegral offset
 
 updateGameState :: UTCTime -> GameState -> GameState
-updateGameState currentTime gs = 
+updateGameState currentTime gs =
   gs
     & updatePlayerPositions
-    & updateBombs currentTime 
+    & updateBombs currentTime
     & updateExpiredExplosions currentTime
-
--- updatePlayerDeltaY :: Int -> Float -> GameState -> GameState
--- updatePlayerDeltaY pid deltaY gs = gs { players = players' }
---   where
---     players' = case safeIndex pid gs.players of
---       Just p -> replace ((p { y = deltaY * p.speed + p.y }) :: Player) pid gs.players
---       Nothing -> gs.players
-
--- updatePlayerDeltaX :: Int -> Float -> GameState -> GameState
--- updatePlayerDeltaX pid deltaX gs = gs { players = players' }
---   where
---     players' = case safeIndex pid gs.players of
---       Just p -> replace ((p { x = deltaX * p.speed + p.x }) :: Player) pid gs.players
---       Nothing -> gs.players
+    & updateExplosionAreas
 
 initBomb :: Int -> Int -> Int -> Int -> Int -> IO Bomb
 initBomb pid x y maxTime radius = do
@@ -463,7 +464,7 @@ updatePlayerBomb :: Int -> Int -> GameState -> IO GameState
 updatePlayerBomb pid delta gs = do
   let p = safeIndex pid gs.players
   case p of
-    Just pl -> if pl.currentBombs < pl.maxBombs then do
+    Just pl -> if pl.currentBombs < pl.maxBombs && pl.isAlive then do
       bomb <- initBomb pl.id (round pl.x) (round pl.y) 3 pl.bombRange
       let players' = replace ((pl { currentBombs = pl.currentBombs + delta }) :: Player) pid gs.players
       return gs { players = players', bombs = bomb : gs.bombs }
@@ -477,11 +478,39 @@ updatePlayerDelta pid dx dy gs = gs { players = players' }
       Just p -> replace ((p { deltaX = dx, deltaY = dy }) :: Player) pid gs.players
       Nothing -> gs.players
 
-updatePlayerPosition :: Player -> Player
-updatePlayerPosition p = p { x = p.x + fromIntegral p.deltaX * p.speed, y = p.y + fromIntegral p.deltaY * p.speed }
+square :: Float -> Float
+square a = a * a
+
+getCollideable :: [(Int, Int)] -> [[Int]] -> [(Int, Int)]
+getCollideable [] _ = []
+getCollideable ((i, j) : coords) grd = case safeGridIndex i j grd of
+  Just 1 -> (i, j) : getCollideable coords grd
+  Just 2 -> (i, j) : getCollideable coords grd
+  _ -> getCollideable coords grd
+
+isCollideWithPlayer :: Float -> Float -> Float -> Int -> Int -> Bool
+isCollideWithPlayer threshold px py ex ey = distance px py ex ey < threshold
+
+distance :: Float -> Float -> Int -> Int -> Float
+distance x1 y1 x2 y2 = sqrt (square (x1 - fromIntegral x2) + square (y1 - fromIntegral y2))
+
+updatePlayerPosition :: GameState -> Player -> Player
+updatePlayerPosition gs p = p { x = x'', y = y'' }
+  where
+    x' = p.x + fromIntegral p.deltaX * p.speed
+    y' = p.y + fromIntegral p.deltaY * p.speed
+
+    positionsToCheck = map (\(i, j) -> (i + round x', j + round y')) explosionPositions
+    collideableGridPositions = getCollideable positionsToCheck gs.grid
+
+    bombDistances = map (\b -> (distance p.x p.y b.x b.y, distance x' y' b.x b.y)) gs.bombs
+
+    isGoingToBomb = any (\(before, after) -> before >= 0.5 && after < 0.5) bombDistances
+
+    (x'', y'') = if any (uncurry (isCollideWithPlayer 0.8 x' y')) collideableGridPositions || isGoingToBomb || not p.isAlive then (p.x, p.y) else (x', y')
 
 updatePlayerPositions :: GameState -> GameState
-updatePlayerPositions gs = gs { players = map updatePlayerPosition gs.players }
+updatePlayerPositions gs = gs { players = map (updatePlayerPosition gs) gs.players }
 
 parseClientRequest :: Int -> ClientRequest -> GameState -> IO GameState
 parseClientRequest pid cr gs
