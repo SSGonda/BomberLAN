@@ -2,6 +2,7 @@ import 'dart:math';
 import 'dart:async';
 import 'package:web_socket_channel/web_socket_channel.dart';
 import '../utils/constants.dart';
+import 'grid.dart';
 
 class Explosion {
   String id;
@@ -53,33 +54,53 @@ class Bomb {
     explosionTimer?.cancel();
   }
 
-  List<Explosion> getExplosionCells(String explosionId) {
+  List<Explosion> getExplosionCells(String explosionId, Grid grid) {
     final cells = <Explosion>[];
 
     cells.add(Explosion(id: explosionId, position: position)); // Center cell
 
     for (int i = 1; i <= range; i++) {
-      cells.add(
-        Explosion(id: explosionId, position: Point(position.x, position.y - i)),
-      );
+      if (!grid.hasHardBlock(Point(position.x, position.y - i))) {
+        cells.add(
+          Explosion(
+            id: explosionId,
+            position: Point(position.x, position.y - i),
+          ),
+        );
+      }
     }
 
     for (int i = 1; i <= range; i++) {
-      cells.add(
-        Explosion(id: explosionId, position: Point(position.x, position.y + i)),
-      );
+      if (!grid.hasHardBlock(Point(position.x, position.y + i))) {
+        cells.add(
+          Explosion(
+            id: explosionId,
+            position: Point(position.x, position.y + i),
+          ),
+        );
+      }
     }
 
     for (int i = 1; i <= range; i++) {
-      cells.add(
-        Explosion(id: explosionId, position: Point(position.x - i, position.y)),
-      );
+      if (!grid.hasHardBlock(Point(position.x - i, position.y))) {
+        cells.add(
+          Explosion(
+            id: explosionId,
+            position: Point(position.x - i, position.y),
+          ),
+        );
+      }
     }
 
     for (int i = 1; i <= range; i++) {
-      cells.add(
-        Explosion(id: explosionId, position: Point(position.x + i, position.y)),
-      );
+      if (!grid.hasHardBlock(Point(position.x + i, position.y))) {
+        cells.add(
+          Explosion(
+            id: explosionId,
+            position: Point(position.x + i, position.y),
+          ),
+        );
+      }
     }
 
     for (final elem in cells) {

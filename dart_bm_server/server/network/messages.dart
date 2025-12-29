@@ -110,7 +110,7 @@ class PlayerQuitMessage extends GameMessage {
 }
 
 class StateUpdateMessage {
-  final String tag = 'state_update';
+  final String tag = 'StateUpdate';
   final Map<String, dynamic> gameState;
 
   StateUpdateMessage(this.gameState);

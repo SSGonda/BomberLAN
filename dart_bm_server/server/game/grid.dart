@@ -74,6 +74,10 @@ class Grid {
     return cells[position.y][position.x] == CellType.softBlock;
   }
 
+  bool hasHardBlock(Point<int> position) {
+    return cells[position.y][position.x] == CellType.hardBlock;
+  }
+
   void destroySoftBlock(Point<int> position) {
     if (hasSoftBlock(position)) {
       cells[position.y][position.x] = CellType.empty;
