@@ -11,7 +11,7 @@
 module Main where
 import Data.Text (Text)
 import Control.Exception (finally)
-import Control.Monad (forM_, forever, unless)
+import Control.Monad (forM_, forever, unless, foldM)
 import Control.Concurrent (MVar, newMVar, modifyMVar_, modifyMVar, readMVar, threadDelay, forkIO)
 import qualified Network.WebSockets as WS
 import System.Environment (getArgs)
@@ -26,19 +26,29 @@ import           Miso.String (ToMisoString, MisoString)
 import qualified Miso.String as MS
 import Data.Time (UTCTime, getCurrentTime, nominalDiffTimeToSeconds, diffUTCTime)
 import System.Random (getStdRandom, randomR)
-import Control.Lens ((^?), (.~), element)
 import Data.List (partition)
 
 import Data.Aeson (ToJSON, FromJSON, encode, decode)
 import qualified Data.ByteString.Lazy as BL
+import Data.Ix (Ix(range))
+import Data.Functor ( (<&>) )  
 
 -- Check whether to run a server or client
+
+mainNothing :: IO ()
+mainNothing = do
+  putStrLn "Invalid Arguments"
 
 main :: IO ()
 main = do
     args <- getArgs
     let mainToRun = case args of
-            ["--host"] -> mainServer -- TODO ASK WHETHER THIS IS CORRECT
+            [numPlayers, gameDura, "--host", port] -> do
+              let numPlayersInt = read numPlayers :: Int
+              let gameDuraInt = read gameDura :: Int
+              if numPlayersInt < 2 || numPlayersInt > 4 || gameDuraInt < 30 || gameDuraInt > 600
+                then mainNothing
+                else mainServer numPlayersInt gameDuraInt (read port :: Int)
             _ -> mainClient
     mainToRun
 
@@ -60,6 +70,8 @@ data Player = Player {
   id :: Int,
   x :: Float,
   y :: Float,
+  deltaX :: Int,
+  deltaY :: Int,
   maxBombs :: Int,
   currentBombs :: Int,
   bombRange :: Int,
@@ -143,6 +155,8 @@ initPlayer id x y = Player {
   id = id,
   x = x,
   y = y,
+  deltaX = 0,
+  deltaY = 0,
   maxBombs = 1,
   currentBombs = 0,
   bombRange = 1,
@@ -232,16 +246,17 @@ broadcast message s = do
     print message
     forM_ s.clients $ \(_, conn) -> WS.sendTextData conn message
 
-mainServer :: IO ()
-mainServer = do
-    initialState <- newServerState 2 120 -- TODO unhardcode this
+mainServer :: Int -> Int -> Int -> IO ()
+mainServer numPlayers gameDura port = do
+    initialState <- newServerState numPlayers gameDura
     state <- newMVar initialState
     putStrLn "Server Running"
 
     _ <- forkIO $ gameLoop state
 
-    WS.runServer "127.0.0.1" 15000 $ application state -- TODO unhardcode this Port Hardcoded as per Phase 2 specs
+    WS.runServer "127.0.0.1" port $ application state
 
+application :: MVar ServerState -> WS.PendingConnection -> IO ()
 application state pending = do
     conn <- WS.acceptRequest pending
     WS.forkPingThread conn 30
@@ -289,11 +304,11 @@ gameLoop state = forever $ do
   modifyMVar_ state $ \s -> do
     let gs = s.gameState
 
-    gs' <-  
+    gs' <-
       if not gs.isGameStarted && (numClients s >= gs.maxPlayers) then return gs { isGameStarted = True, gameStartTime = currentTime } -- start the game
       else if gs.isGameOver || not gs.isGameStarted then return gs -- game not started or game over
-      else updateGameState currentTime s.gameState -- update game
-    
+      else updateGameState currentTime gs -- update game
+
     let s' = (s { gameState = gs' }) :: ServerState
 
     unless (gs == gs') $ do
@@ -306,8 +321,185 @@ gameLoop state = forever $ do
     return s'
   threadDelay 16667 -- 16.667 ms to microseconds, 1000 ms / 60 frames
 
-updateBombs :: UTCTime -> GameState -> GameState
-updateBombs currentTime gs = gs { bombs = active, players = removeBombs expired gs.players } 
+findWinner :: [Player] -> Maybe Int
+findWinner [] = Nothing
+findWinner ps = winner
+  where
+    alives = filter (\p -> p.isAlive) ps
+    winner = case length alives of
+      1 -> Just (head alives).id
+      _ -> Nothing
+
+updateCheckGameOver :: UTCTime -> GameState -> GameState
+updateCheckGameOver currentTime gs
+  | isExpired currentTime gs.gameStartTime gs.gameDuration = gs { isGameOver = True, winner = winr }
+  | otherwise = gs { isGameOver = gmover, winner = winr }
+  where
+    winr = findWinner gs.players
+    gmover = case winr of
+      Just _ -> True
+      Nothing -> False
+
+initExplosion :: UTCTime -> Int -> Int -> Explosion
+initExplosion currentTime x y = Explosion {
+    timePlaced = currentTime,
+    x = x,
+    y = y
+  }
+
+safeIndex :: Int -> [a] -> Maybe a
+safeIndex _ [] = Nothing
+safeIndex 0 (x' : _) = Just x'
+safeIndex index (_ : xs) = safeIndex (index - 1) xs
+
+safeGridIndex :: Int -> Int -> [[a]] -> Maybe a
+safeGridIndex i j grid = a
+  where
+    row = safeIndex i grid
+    a = case row of
+      Just r -> safeIndex j r
+      Nothing -> Nothing
+
+replace :: a -> Int -> [a] -> [a]
+replace _ _ [] = []
+replace a 0 (_ : xs) = a : xs
+replace a index (x' : xs) = x' : replace a (index - 1) xs
+
+gridReplace :: a -> Int -> Int -> [[a]] -> [[a]]
+gridReplace a i j grid = grid'
+  where
+    row = case safeIndex i grid of
+      Just r -> Just (replace a j r)
+      Nothing -> Nothing
+    grid' = case row of
+      Just r -> replace r i grid
+      Nothing -> grid
+
+explosionPositions :: Int -> [(Int, Int)]
+explosionPositions 0 = [(0, 0)]
+explosionPositions r = [(0, 0)]
+  <> range ((0, 1), (0, r))
+  <> range ((1, 0), (r, 0))
+  <> range ((-r, 0), (-1, 0))
+  <> range ((0, -r), (0, -1))
+
+spawnPowerup :: Text -> Int -> Int -> [Powerup] -> [Powerup]
+spawnPowerup name x y ps = Powerup { name = name, x = x, y = y } : ps
+
+spawnPowerupWithProbability :: [Powerup] -> Int -> Int -> Int -> IO [Powerup]
+spawnPowerupWithProbability ps p x y = do
+  r <- getStdRandom (randomR (0, 99))
+  if r < p then do
+    r' <- getStdRandom (randomR (0, 2))
+    if r' == 0 then
+      return (spawnPowerup "fireup" x y ps)
+    else if r' == 1 then
+      return (spawnPowerup "bombup" x y ps)
+    else if r' == 2 then
+      return (spawnPowerup "speedup" x y ps)
+    else
+      return ps
+  else
+    return ps
+
+explodeCoord :: Int -> (Int, Int) -> UTCTime -> GameState -> IO GameState
+explodeCoord r (x, y) currentTime gs = do
+  powerups'' <- foldM (\p (i, j) -> spawnPowerupWithProbability p 10 i j) powerups' softs
+  return gs { grid = grid', bombs = bombs', powerups = powerups'', explosions = explosions' }
+  where
+    categorizeBlocks :: [(Int, Int)] -> [[Int]] -> ([(Int, Int)], [(Int, Int)])
+    categorizeBlocks [] _ = ([], [])
+    categorizeBlocks coords grd = foldr categorizeBlock ([], []) coords
+      where
+        categorizeBlock :: (Int, Int) -> ([(Int, Int)], [(Int, Int)]) -> ([(Int, Int)], [(Int, Int)])
+        categorizeBlock (i, j) (explodables', softs') = case safeGridIndex i j grd of
+          Just 0 -> ((i, j) : explodables', softs')
+          Just 1 -> (explodables', (i, j) : softs')
+          _ -> (explodables', softs')
+
+    removeSoft :: [(Int, Int)] -> [[Int]] -> [[Int]]
+    removeSoft [] grd = grd
+    removeSoft ((i, j) : coords) grd = removeSoft coords (gridReplace 0 i j grd)
+
+    placeExplosives :: [(Int, Int)] -> [Explosion] -> [Explosion]
+    placeExplosives [] es = es
+    placeExplosives ((i, j) : coords) es = Explosion { timePlaced = currentTime, x = i, y = j } : placeExplosives coords es
+
+    detonateBombs :: [(Int, Int)] -> [Bomb] -> [Bomb]
+    detonateBombs [] bs = bs
+    detonateBombs _ [] = []
+    detonateBombs (coord : coords) bs = detonateBombs coords (detonateBomb coord bs)
+      where
+        detonateBomb :: (Int, Int) -> [Bomb] -> [Bomb]
+        detonateBomb _ [] = []
+        detonateBomb (i, j) (b : bs')
+          | b.x == i && b.y == j = b { maxTime = 0 } : bs' -- TODO HORRIBLE HACK TO MAKE A BOMB EXPLODE ON THE NEXT TICK, which is at least 16 ms
+          | otherwise = b : detonateBomb (i, j) bs'
+
+    removePowerups :: [(Int, Int)] -> [Powerup] -> [Powerup]
+    removePowerups [] ps = ps
+    removePowerups _ [] = []
+    removePowerups ((i, j) : coords) ps = removePowerups coords (filter (\p -> p.x /= i || p.y /= j) ps)
+
+    (explodables, softs) = categorizeBlocks (map (\(i, j) -> (i + x, j + y)) (explosionPositions r)) gs.grid
+
+    grid' = removeSoft softs gs.grid
+    bombs' = detonateBombs explodables gs.bombs
+    powerups' = removePowerups explodables gs.powerups
+    explosions' = placeExplosives explodables gs.explosions
+    -- TODO add handling for damaging players
+
+explodeCoords :: [(Int, Int, Int)] -> UTCTime -> GameState -> IO GameState
+explodeCoords [] _ gs = return gs
+explodeCoords ((x, y, r) : coords) currentTime gs = do
+  gs' <- explodeCoord r (x, y) currentTime gs
+  explodeCoords coords currentTime gs'
+
+updateExpiredExplosions :: UTCTime -> GameState -> GameState
+updateExpiredExplosions currentTime gs = gs { explosions = filter (\e -> not (isExpired currentTime e.timePlaced 1)) gs.explosions }
+
+updateExplosionAreas :: GameState -> GameState
+updateExplosionAreas gs = gs { players = playersCheckExplosions gs.players}
+  where
+    playerCollidesWithExplosions :: Player -> Bool
+    playerCollidesWithExplosions p = any (\e -> isCollideWithPlayer 1 p.x p.y e.x e.y) gs.explosions
+
+    playersCheckExplosions :: [Player] -> [Player]
+    playersCheckExplosions [] = []
+    playersCheckExplosions (p : ps) =
+      if playerCollidesWithExplosions p then
+        p { isAlive = False } : playersCheckExplosions ps
+      else
+        p : playersCheckExplosions ps
+
+updatePowerupAreas :: GameState -> GameState
+updatePowerupAreas gs = gs { players = players', powerups = powerups' }
+  where
+    applyPowerupForPlayer :: Powerup -> Player -> Player
+    applyPowerupForPlayer Powerup { name = "fireup" } p = p { bombRange = p.bombRange + 1 }
+    applyPowerupForPlayer Powerup { name = "bombup" } p = p { maxBombs = p.maxBombs + 1 }
+    applyPowerupForPlayer Powerup { name = "speedup" } p = p { speed = p.speed * 1.3 }
+    applyPowerupForPlayer _ p = p
+
+    checkPowerupsForPlayer :: [Powerup] -> Player -> ([Powerup], Player)
+    checkPowerupsForPlayer [] p = ([], p)
+    checkPowerupsForPlayer (pup : pups) p
+      | isCollideWithPlayer 1 p.x p.y pup.x pup.y = (pups, applyPowerupForPlayer pup p)
+      | otherwise =  (pup : pups', p')
+      where
+        (pups', p') = checkPowerupsForPlayer pups p
+
+    checkPlayersForPowerups :: [Powerup] -> [Player] -> ([Powerup], [Player])
+    checkPlayersForPowerups pups [] = (pups, [])
+    checkPlayersForPowerups pups (p : ps) = (pups'', p' : ps')
+      where
+        (pups', p') = checkPowerupsForPlayer pups p
+        (pups'', ps') = checkPlayersForPowerups pups' ps
+    
+    (powerups', players') = checkPlayersForPowerups gs.powerups gs.players
+
+updateBombs :: UTCTime -> GameState -> IO GameState
+updateBombs currentTime gs = gs''
   where
     (expired, active) = partition (\b -> isExpired currentTime b.timePlaced b.maxTime) gs.bombs
 
@@ -316,33 +508,30 @@ updateBombs currentTime gs = gs { bombs = active, players = removeBombs expired 
     removeBomb b (p : ps)
       | b.player == p.id = p { currentBombs = p.currentBombs - 1 } : ps
       | otherwise = p : removeBomb b ps
-    
+
     removeBombs :: [Bomb] -> [Player] -> [Player]
     removeBombs [] ps = ps
     removeBombs _ [] = []
     removeBombs (b : bs) ps = removeBombs bs ps'
-      where 
+      where
         ps' = removeBomb b ps
 
+    coordsToExplode = map (\b -> (b.x, b.y, b.radius)) expired
+    gs' = gs { bombs = active, players = removeBombs expired gs.players } -- remove bombs from gamestate and decrement player active bombs
+    gs'' = explodeCoords coordsToExplode currentTime gs' -- add explosions, and do relevant explosion behaviour in gamestate
+
 isExpired :: UTCTime -> UTCTime -> Int -> Bool
-isExpired t1 t2 offset = abs (nominalDiffTimeToSeconds (diffUTCTime t1 t2)) >= fromIntegral offset
+isExpired t1 t2 offset = nominalDiffTimeToSeconds (diffUTCTime t1 t2) >= fromIntegral offset
 
 updateGameState :: UTCTime -> GameState -> IO GameState
-updateGameState currentTime gs = return (updateBombs currentTime gs)
-
-updatePlayerDeltaY :: Int -> Float -> GameState -> GameState
-updatePlayerDeltaY pid deltaY gs = gs { players = players' }
-  where
-    players' = case gs.players ^? element pid of
-      Just p -> gs.players & element pid Control.Lens..~ ((p { y = deltaY * p.speed + p.y }) :: Player)
-      Nothing -> gs.players
-
-updatePlayerDeltaX :: Int -> Float -> GameState -> GameState
-updatePlayerDeltaX pid deltaX gs = gs { players = players' }
-  where
-    players' = case gs.players ^? element pid of
-      Just p -> gs.players & element pid Control.Lens..~ ((p { x = deltaX * p.speed + p.x }) :: Player)
-      Nothing -> gs.players
+updateGameState currentTime gs =
+  gs
+    & updatePlayerPositions
+    & updateBombs currentTime 
+    <&> updateExpiredExplosions currentTime 
+    <&> updateExplosionAreas
+    <&> updatePowerupAreas
+    <&> updateCheckGameOver currentTime
 
 initBomb :: Int -> Int -> Int -> Int -> Int -> IO Bomb
 initBomb pid x y maxTime radius = do
@@ -357,23 +546,65 @@ initBomb pid x y maxTime radius = do
   }
 
 updatePlayerBomb :: Int -> Int -> GameState -> IO GameState
-updatePlayerBomb pid delta gs= do
-  let p = gs.players ^? element pid
+updatePlayerBomb pid delta gs = do
+  let p = safeIndex pid gs.players
   case p of
-    Just pl -> if pl.currentBombs < pl.maxBombs then do
-      bomb <- initBomb pl.id (floor pl.x) (floor pl.y) 3 pl.bombRange
-      let players' = gs.players & element pid Control.Lens..~ ((pl { currentBombs = pl.currentBombs + delta }) :: Player)
+    Just pl -> if pl.currentBombs < pl.maxBombs && pl.isAlive then do
+      bomb <- initBomb pl.id (round pl.x) (round pl.y) 3 pl.bombRange
+      let players' = replace ((pl { currentBombs = pl.currentBombs + delta }) :: Player) pid gs.players
       return gs { players = players', bombs = bomb : gs.bombs }
       else return gs
     Nothing -> return gs
 
+updatePlayerDelta :: Int -> Int -> Int -> GameState -> GameState
+updatePlayerDelta pid dx dy gs = gs { players = players' }
+  where
+    players' = case safeIndex pid gs.players of
+      Just p -> replace ((p { deltaX = dx, deltaY = dy }) :: Player) pid gs.players
+      Nothing -> gs.players
+
+square :: Float -> Float
+square a = a * a
+
+getCollideable :: [(Int, Int)] -> [[Int]] -> [(Int, Int)]
+getCollideable [] _ = []
+getCollideable ((i, j) : coords) grd = case safeGridIndex i j grd of
+  Just 1 -> (i, j) : getCollideable coords grd
+  Just 2 -> (i, j) : getCollideable coords grd
+  _ -> getCollideable coords grd
+
+isCollideWithPlayer :: Float -> Float -> Float -> Int -> Int -> Bool
+isCollideWithPlayer threshold px py ex ey = distance px py ex ey < threshold
+
+distance :: Float -> Float -> Int -> Int -> Float
+distance x1 y1 x2 y2 = sqrt (square (x1 - fromIntegral x2) + square (y1 - fromIntegral y2))
+
+updatePlayerPosition :: GameState -> Player -> Player
+updatePlayerPosition gs p = p { x = x'', y = y'' }
+  where
+    x' = p.x + fromIntegral p.deltaX * p.speed
+    y' = p.y + fromIntegral p.deltaY * p.speed
+
+    positionsToCheck = map (\(i, j) -> (i + round x', j + round y')) (explosionPositions 1)
+    collideableGridPositions = getCollideable positionsToCheck gs.grid
+
+    bombDistances = map (\b -> (distance p.x p.y b.x b.y, distance x' y' b.x b.y)) gs.bombs
+
+    isGoingToBomb = any (\(before, after) -> before >= 0.5 && after < 0.5) bombDistances
+
+    (x'', y'') = if any (uncurry (isCollideWithPlayer 0.8 x' y')) collideableGridPositions || isGoingToBomb || not p.isAlive then (p.x, p.y) else (x', y')
+
+updatePlayerPositions :: GameState -> GameState
+updatePlayerPositions gs = gs { players = map (updatePlayerPosition gs) gs.players }
+
 parseClientRequest :: Int -> ClientRequest -> GameState -> IO GameState
 parseClientRequest pid cr gs
   | gs.isGameOver || not gs.isGameStarted = return gs
-  | cr.action == "up" = return (updatePlayerDeltaY pid (-1) gs)
-  | cr.action == "down" = return (updatePlayerDeltaY pid 1 gs)
-  | cr.action == "left" = return (updatePlayerDeltaX pid (-1) gs)
-  | cr.action == "right" = return (updatePlayerDeltaX pid 1 gs)
+  | cr.action == "up" = return (updatePlayerDelta pid (-1) 0 gs)
+  | cr.action == "down" = return (updatePlayerDelta pid 1 0 gs)
+  | cr.action == "left" = return (updatePlayerDelta pid 0 (-1) gs)
+  | cr.action == "right" = return (updatePlayerDelta pid 0 1 gs)
+  | cr.action == "stop" = return (updatePlayerDelta pid 0 0 gs)
   | cr.action == "bomb" = updatePlayerBomb pid 1 gs
   | otherwise = return gs
 
@@ -574,6 +805,7 @@ viewModel m =
         , H.button_ [H.onClick (SendMessage (jsonRequest "down"))] [M.text "Down"]
         , H.button_ [H.onClick (SendMessage (jsonRequest "left"))] [M.text "Left"]
         , H.button_ [H.onClick (SendMessage (jsonRequest "right"))] [M.text "Right"]
+        , H.button_ [H.onClick (SendMessage (jsonRequest "stop"))] [M.text "Stop"]
         , H.button_ [H.onClick (SendMessage (jsonRequest "bomb"))] [M.text "Bomb"]
        ]
     -- , H.div_

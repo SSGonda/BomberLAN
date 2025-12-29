@@ -93,9 +93,10 @@ class GameState {
 
   void plantBomb(int playerId) {
     final player = players[playerId];
-    if (player == null || !player.canPlantBomb()) return;
+    if (!player.canPlantBomb()) return;
 
     final bombPosition = Point<int>(
+      //changed to round
       player.position.x.floor(),
       player.position.y.floor(),
     );
@@ -129,7 +130,7 @@ class GameState {
     if (bomb == null) return;
 
     final explosionId = 'explosion_${DateTime.now().millisecondsSinceEpoch}';
-    final explosionCells = bomb.getExplosionCells(explosionId);
+    final explosionCells = bomb.getExplosionCells(explosionId, grid);
 
     explosions.addAll(explosionCells);
 
@@ -215,8 +216,8 @@ class GameState {
 
         //  powerup collisions
         final playerCell = Point<int>(
-          player.position.x.round(),
-          player.position.y.round(),
+          player.position.x.floor(),
+          player.position.y.floor(),
         );
 
         final powerupsToRemove = <String>[];
@@ -263,7 +264,7 @@ class GameState {
       'winner': winner,
       'players': players,
       'bombs': bombs.values.toList(),
-      'powerups': powerups.map((key, value) => MapEntry(key, value.toJson())),
+      'powerups': powerups.values.toList(),
       'explosions': explosions.map((explosion) => explosion.toJson()).toList(),
       'grid': grid.toJson(),
     };

@@ -14,9 +14,11 @@ To start the server,
 
 Navigate to `haskell`
 
-Run `cabal run haskell -- --host`
+Run `cabal run haskell -- <players> <game duration> --host <port>`
 
-This should start the server in `127.0.0.1` in port `15000`
+Where players, game duration and port are integers without the `<>`
+
+The server should be started in `127.0.0.1:<port>`
 
 #### Client
 

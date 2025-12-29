@@ -164,7 +164,7 @@ class GameServer {
     //  welcome message
     webSocket.sink.add(
       jsonEncode({
-        'tag': 'join_accepted',
+        'tag': 'ClientJoin',
         'playerId': playerId,
         'playerNumber': playerNumber,
         'maxPlayers': gameState.maxPlayers,
