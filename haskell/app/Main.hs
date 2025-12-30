@@ -23,6 +23,7 @@ import Miso.Subscription.Keyboard (keyboardSub)
 import qualified Miso.Html as H
 import qualified Miso.Html.Property as P
 import qualified Miso.CSS as CSS
+import qualified Miso.CSS.Color as Col
 import GHC.Generics ( Generic )
 import Miso.Lens ( (&), (%=), (.=), (^.), lens, use, Lens )
 import Miso.WebSocket
@@ -984,16 +985,44 @@ renderPlayer :: Player -> M.View Model Action
 renderPlayer player =
   let yPos = player.x  * 40.0  -- Convert from grid coordinates (1-based) to pixels
       xPos = player.y * 40.0
-  in H.img_
-     [ P.src_ (M.ms ("../images/player" ++ show (player.id + 1) ++ ".png"))
-     , CSS.style_ [ CSS.position "absolute"
-                  , CSS.left (MS.ms (show (floor xPos :: Int) ++ "px"))
-                  , CSS.top (MS.ms (show (floor yPos :: Int) ++ "px"))
-                  , CSS.width "40px"
-                  , CSS.height "40px"
-                  , CSS.zIndex "1"
-                  ]
-     ]
+      getPlayerColor :: Int -> CSS.Color
+      getPlayerColor pid
+        | pid == 0 = Col.blue
+        | pid == 1 = Col.red
+        | pid == 2 = Col.green
+        | pid == 3 = Col.yellow
+        | otherwise = Col.black
+  in
+    H.div_ 
+      []
+      [ H.h3_ 
+        [ CSS.style_ [ CSS.position "absolute"
+                     , CSS.textAlign "center"
+                     , CSS.left (MS.ms (show (xPos + 3) ++ "px"))
+                     , CSS.top (MS.ms (show (yPos - 45) ++ "px"))
+                     , CSS.color (getPlayerColor player.id)
+                     , CSS.backgroundColor Col.white
+                     , CSS.padding "2px 5px"
+                     , CSS.borderRadius "5px"
+                     , CSS.borderWidth "2px"
+                     , CSS.borderStyle "solid"
+                     , CSS.borderColor Col.black
+                     , CSS.zIndex "2"
+                     ]
+        ] 
+        [ M.text (MS.ms ("P" ++ show (player.id + 1))) ] 
+      , H.img_
+        [ P.src_ (M.ms ("../images/player" ++ show (player.id + 1) ++ ".png"))
+        , CSS.style_ [ CSS.position "absolute"
+                      , CSS.left (MS.ms (show (floor xPos :: Int) ++ "px"))
+                      , CSS.top (MS.ms (show (floor yPos :: Int) ++ "px"))
+                      , CSS.width "40px"
+                      , CSS.height "40px"
+                      , CSS.zIndex "1"
+                      ]
+        ]
+      ] 
+    
   
 -- Render a single bomb
 renderBomb :: Bomb -> M.View Model Action
