@@ -887,12 +887,28 @@ renderGameGrid gs =
                ]
   ]
   [ -- Grid layer
-    -- Timer
-    H.div_
-    [ P.id_ "timer"
-    , CSS.style_ [ CSS.position "relative", CSS.marginBottom "8px", CSS.textAlign "center" ]
-    ]
-    [ H.span_ [] [ M.text (MS.ms ("Time Left: " ++ show (gs.timeRemaining `div` 60) ++ ":" ++ show (gs.timeRemaining `mod` 60))) ] ]
+    if gs.isGameOver then
+      -- Game Over Screen
+      H.div_
+      [ P.id_ "game-over"
+      , CSS.style_ [CSS.textAlign "center"]
+      ]
+      [ H.h1_ [] [ M.text "Game Over!" ]
+      , case gs.winner of
+          Just wid -> H.h2_ [] [ M.text (MS.ms ("Winner: Player " ++ show (wid + 1))) ]
+          Nothing -> H.h2_ [] [ M.text "It's a Draw!" ]
+      ]
+    else
+      -- Timer
+      H.div_
+      [ P.id_ "timer"
+      , CSS.style_ [ CSS.position "relative"
+                   , CSS.marginBottom "8px"
+                   , CSS.marginTop "40px"
+                   , CSS.textAlign "center" 
+                   ]
+      ]
+      [ H.span_ [] [ M.text (MS.ms ("Time Left: " ++ show (gs.timeRemaining `div` 60) ++ ":" ++ show (gs.timeRemaining `mod` 60))) ] ]
 
   , H.div_ 
     [ P.id_ "grid"
@@ -900,7 +916,7 @@ renderGameGrid gs =
                  , CSS.gridTemplateColumns "repeat(15, 40px)"
                  , CSS.gridTemplateRows "repeat(13, 40px)"
                  , CSS.position "absolute"
-                 , CSS.top "40px"
+                 , CSS.top "80px"
                  , CSS.left "0"
                  , CSS.zIndex "0"
                  ]
@@ -910,7 +926,7 @@ renderGameGrid gs =
     -- Players layer (on top of grid)
   , H.div_
     [ CSS.style_ [ CSS.position "absolute"
-                 , CSS.top "40px"
+                 , CSS.top "80px"
                  , CSS.left "0"
                  , CSS.zIndex "1"
                  , CSS.width "100%"
@@ -922,7 +938,7 @@ renderGameGrid gs =
     -- Bombs layer (on top of players)
   , H.div_
     [ CSS.style_ [ CSS.position "absolute"
-                 , CSS.top "40px"
+                 , CSS.top "80px"
                  , CSS.left "0"
                  , CSS.zIndex "2"
                  , CSS.width "100%"
@@ -934,7 +950,7 @@ renderGameGrid gs =
     -- Powerups layer (on top of bombs)
   , H.div_
     [ CSS.style_ [ CSS.position "absolute"
-                 , CSS.top "40px"
+                 , CSS.top "80px"
                  , CSS.left "0"
                  , CSS.zIndex "2"
                  , CSS.width "100%"
@@ -946,7 +962,7 @@ renderGameGrid gs =
     -- Explosions layer (on top of powerups)
   , H.div_
     [ CSS.style_ [ CSS.position "absolute"
-                 , CSS.top "40px"
+                 , CSS.top "80px"
                  , CSS.left "0"
                  , CSS.zIndex "3"
                  , CSS.width "100%"
