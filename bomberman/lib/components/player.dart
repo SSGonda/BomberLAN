@@ -13,9 +13,8 @@ class PlayerComponent extends PositionComponent with HasGameRef<BombermanClient>
 
   @override
   Future<void> onLoad() async {
-    final spriteImage = gameRef.images.fromCache('player.png'); 
-    // TODO: add different sprite per player
-
+    final spriteImage = gameRef.images.fromCache('player${id + 1}.png');
+    
     _sprite = SpriteComponent(
       sprite: Sprite(spriteImage),
       size: Vector2.all(tileSize * 0.8),
