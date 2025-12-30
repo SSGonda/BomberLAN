@@ -653,15 +653,11 @@ data Action
   | OnClosed Closed
   | OnError MisoString
   | KeyboardEvent IntSet
-  | Send
   | SendMessage MisoString
-  | Update MisoString
   | Append Message
   | Connect
   | Disconnect
-  | NoOp
   | CloseBox
-  | Clear
 -----------------------------------------------------------------------------
 data Model = Model
   { _msg :: MisoString
@@ -707,16 +703,6 @@ websocketComponent box =
     }
   where
     updateModel x = case x of
-      Send -> do
-        m <- use msg
-        unless (MS.null m) $ do
-          M.issue (SendMessage m)
-          clearInput .= True
-          msg .= ""
-          M.io $ do
-            date <- M.newDate
-            dateString <- date & M.toLocaleString
-            pure $ Append (Message dateString m CLIENT)
       SendMessage m -> do
         socket <- use websocket
         sendText socket m
@@ -746,9 +732,6 @@ websocketComponent box =
         received %= (message :)
       OnError errorMessage ->
         M.io_ (M.consoleError errorMessage)
-      Update input -> do
-        clearInput .= False
-        msg .= input
       KeyboardEvent keys -> do
         -- Arrow keys (orthogonal only - first pressed wins)
         clientNumber <- use boxId
@@ -776,16 +759,10 @@ websocketComponent box =
         -- Spacebar for bomb
         when (IntSet.member 32 keys) $ do
           M.issue (SendMessage (jsonRequest "bomb" clientNumber))
-      NoOp ->
-        pure ()
       CloseBox ->
         M.broadcast box
       Disconnect ->
         close =<< use websocket
-      Clear -> do
-        clearInput .= True
-        msg .= ""
-        received .= []
       _ -> pure ()
 --------------
 jsonRequest :: Text -> Int -> MisoString
@@ -1027,8 +1004,8 @@ renderPlayer player =
 -- Render a single bomb
 renderBomb :: Bomb -> M.View Model Action
 renderBomb bomb =
-  let yPos = (bomb.x) * 40  -- Convert from grid coordinates (1-based) to pixels
-      xPos = (bomb.y) * 40
+  let yPos = bomb.x * 40  -- Convert from grid coordinates (1-based) to pixels
+      xPos = bomb.y * 40
   in H.img_
      [ P.src_ (M.ms "../images/bomb.png")
      , CSS.style_ [ CSS.position "absolute"
@@ -1043,8 +1020,8 @@ renderBomb bomb =
 -- Render a single powerup
 renderPowerup :: Powerup -> M.View Model Action
 renderPowerup powerup =
-  let xPos = (powerup.x) * 40  -- Convert from grid coordinates (1-based) to pixels
-      yPos = (powerup.y) * 40
+  let xPos = powerup.x * 40  -- Convert from grid coordinates (1-based) to pixels
+      yPos = powerup.y * 40
       getPowerName :: Text -> String
       getPowerName name
         | name == "fireup" = "fire"
@@ -1065,8 +1042,8 @@ renderPowerup powerup =
 -- Render single explosion
 renderExplosion :: Explosion -> M.View Model Action
 renderExplosion explosion =
-  let yPos = (explosion.x) * 40  -- Convert from grid coordinates (1-based) to pixels
-      xPos = (explosion.y) * 40
+  let yPos = explosion.x * 40  -- Convert from grid coordinates (1-based) to pixels
+      xPos = explosion.y * 40
   in H.img_
      [ P.src_ (M.ms "../images/explosion.png")
      , CSS.style_ [ CSS.position "absolute"
