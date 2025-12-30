@@ -8,16 +8,20 @@
 {-# LANGUAGE CPP #-}
 {-# LANGUAGE DuplicateRecordFields #-}
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 module Main where
 import Data.Text (Text)
-import Control.Exception (finally)
-import Control.Monad (forM_, forever, unless, foldM)
+import Data.ByteString.Lazy (ByteString)
+import Control.Exception (finally, catch, throwIO, SomeException)
+import Control.Monad (forM_, forever, unless, foldM, when, void)
 import Control.Concurrent (MVar, newMVar, modifyMVar_, modifyMVar, readMVar, threadDelay, forkIO)
 import qualified Network.WebSockets as WS
 import System.Environment (getArgs)
 import qualified Miso as M
+import Miso.Subscription.Keyboard (arrowsSub, Arrows)
 import qualified Miso.Html as H
 import qualified Miso.Html.Property as P
+import qualified Miso.CSS as CSS
 import GHC.Generics ( Generic )
 import Miso.Lens ( (&), (%=), (.=), (^.), lens, use, Lens )
 import Miso.WebSocket
@@ -148,7 +152,7 @@ instance FromJSON ClientRequest
 instance ToJSON ClientRequest
 
 initPlayerPositions :: [(Int, Float, Float)] -- id, x, y
-initPlayerPositions = [(0, 1.0, 1.0), (1, 1.0, 13.0), (2, 11.0, 13.0), (3, 11.0, 1.0)]
+initPlayerPositions = [(0, 2.0, 2.0), (1, 2.0, 12.0), (2, 14.0, 12.0), (3, 14.0, 2.0)]
 
 initPlayer :: Int -> Float -> Float -> Player
 initPlayer id x y = Player {
@@ -386,6 +390,10 @@ explosionPositions r = [(0, 0)]
 spawnPowerup :: Text -> Int -> Int -> [Powerup] -> [Powerup]
 spawnPowerup name x y ps = Powerup { name = name, x = x, y = y } : ps
 
+-- Convert a 1-based float grid coordinate to 0-based grid index for lists
+posToIdx :: Float -> Int
+posToIdx f = floor f - 1
+
 spawnPowerupWithProbability :: [Powerup] -> Int -> Int -> Int -> IO [Powerup]
 spawnPowerupWithProbability ps p x y = do
   r <- getStdRandom (randomR (0, 99))
@@ -404,7 +412,8 @@ spawnPowerupWithProbability ps p x y = do
 
 explodeCoord :: Int -> (Int, Int) -> UTCTime -> GameState -> IO GameState
 explodeCoord r (x, y) currentTime gs = do
-  powerups'' <- foldM (\p (i, j) -> spawnPowerupWithProbability p 10 i j) powerups' softs
+  -- softs contains (row, col) pairs (0-based). spawn powerups use 1-based grid coords.
+  powerups'' <- foldM (\p (r, c) -> spawnPowerupWithProbability p 10 (c + 1) (r + 1)) powerups' softs
   return gs { grid = grid', bombs = bombs', powerups = powerups'', explosions = explosions' }
   where
     categorizeBlocks :: [(Int, Int)] -> [[Int]] -> ([(Int, Int)], [(Int, Int)])
@@ -423,7 +432,8 @@ explodeCoord r (x, y) currentTime gs = do
 
     placeExplosives :: [(Int, Int)] -> [Explosion] -> [Explosion]
     placeExplosives [] es = es
-    placeExplosives ((i, j) : coords) es = Explosion { timePlaced = currentTime, x = i, y = j } : placeExplosives coords es
+    -- input list contains (row, col) (0-based); store explosions as 1-based coords (x=col+1, y=row+1)
+    placeExplosives ((i, j) : coords) es = Explosion { timePlaced = currentTime, x = j + 1, y = i + 1 } : placeExplosives coords es
 
     detonateBombs :: [(Int, Int)] -> [Bomb] -> [Bomb]
     detonateBombs [] bs = bs
@@ -433,15 +443,19 @@ explodeCoord r (x, y) currentTime gs = do
         detonateBomb :: (Int, Int) -> [Bomb] -> [Bomb]
         detonateBomb _ [] = []
         detonateBomb (i, j) (b : bs')
-          | b.x == i && b.y == j = b { maxTime = 0 } : bs' -- TODO HORRIBLE HACK TO MAKE A BOMB EXPLODE ON THE NEXT TICK, which is at least 16 ms
+          -- explodables list contains (row=i, col=j) (0-based); bombs store 1-based coords (x=col+1, y=row+1)
+          | b.x == j + 1 && b.y == i + 1 = b { maxTime = 0 } : bs' -- TODO HORRIBLE HACK TO MAKE A BOMB EXPLODE ON THE NEXT TICK, which is at least 16 ms
           | otherwise = b : detonateBomb (i, j) bs'
 
     removePowerups :: [(Int, Int)] -> [Powerup] -> [Powerup]
     removePowerups [] ps = ps
     removePowerups _ [] = []
-    removePowerups ((i, j) : coords) ps = removePowerups coords (filter (\p -> p.x /= i || p.y /= j) ps)
+    -- explodables are (row=i, col=j) (0-based); powerups store 1-based coords (x=col+1, y=row+1)
+    removePowerups ((i, j) : coords) ps = removePowerups coords (filter (\p -> p.x /= j + 1 || p.y /= i + 1) ps)
 
-    (explodables, softs) = categorizeBlocks (map (\(i, j) -> (i + x, j + y)) (explosionPositions r)) gs.grid
+    -- explosionPositions provides (dx,dy) where dx is column offset, dy is row offset.
+    -- bombs are 1-based; convert to 0-based indices when indexing into the grid.
+    (explodables, softs) = categorizeBlocks (map (\(dx, dy) -> ((y - 1) + dy, (x - 1) + dx)) (explosionPositions r)) gs.grid
 
     grid' = removeSoft softs gs.grid
     bombs' = detonateBombs explodables gs.bombs
@@ -550,7 +564,7 @@ updatePlayerBomb pid delta gs = do
   let p = safeIndex pid gs.players
   case p of
     Just pl -> if pl.currentBombs < pl.maxBombs && pl.isAlive then do
-      bomb <- initBomb pl.id (round pl.x) (round pl.y) 3 pl.bombRange
+      bomb <- initBomb pl.id (floor pl.x) (floor pl.y) 3 pl.bombRange
       let players' = replace ((pl { currentBombs = pl.currentBombs + delta }) :: Player) pid gs.players
       return gs { players = players', bombs = bomb : gs.bombs }
       else return gs
@@ -585,14 +599,17 @@ updatePlayerPosition gs p = p { x = x'', y = y'' }
     x' = p.x + fromIntegral p.deltaX * p.speed
     y' = p.y + fromIntegral p.deltaY * p.speed
 
-    positionsToCheck = map (\(i, j) -> (i + round x', j + round y')) (explosionPositions 1)
+    -- Convert positions to 0-based grid indices when checking collisions.
+    positionsToCheck = map (\(dx, dy) -> (posToIdx y' + dy, posToIdx x' + dx)) (explosionPositions 1)
     collideableGridPositions = getCollideable positionsToCheck gs.grid
 
     bombDistances = map (\b -> (distance p.x p.y b.x b.y, distance x' y' b.x b.y)) gs.bombs
 
+    -- Threshold 0.5 for bombs matches player sprite size (40x40 sprite = ~0.5 grid units)
     isGoingToBomb = any (\(before, after) -> before >= 0.5 && after < 0.5) bombDistances
 
-    (x'', y'') = if any (uncurry (isCollideWithPlayer 0.8 x' y')) collideableGridPositions || isGoingToBomb || not p.isAlive then (p.x, p.y) else (x', y')
+    -- collideableGridPositions contains (row, col); isCollideWithPlayer expects (ex,ey)=(col,row) in 1-based coords
+    (x'', y'') = if any (\(r, c) -> isCollideWithPlayer 0.8 x' y' (c + 1) (r + 1)) collideableGridPositions || isGoingToBomb || not p.isAlive then (p.x, p.y) else (x', y')
 
 updatePlayerPositions :: GameState -> GameState
 updatePlayerPositions gs = gs { players = map (updatePlayerPosition gs) gs.players }
@@ -600,10 +617,10 @@ updatePlayerPositions gs = gs { players = map (updatePlayerPosition gs) gs.playe
 parseClientRequest :: Int -> ClientRequest -> GameState -> IO GameState
 parseClientRequest pid cr gs
   | gs.isGameOver || not gs.isGameStarted = return gs
-  | cr.action == "up" = return (updatePlayerDelta pid (-1) 0 gs)
-  | cr.action == "down" = return (updatePlayerDelta pid 1 0 gs)
-  | cr.action == "left" = return (updatePlayerDelta pid 0 (-1) gs)
-  | cr.action == "right" = return (updatePlayerDelta pid 0 1 gs)
+  | cr.action == "up" = return (updatePlayerDelta pid 0 (-1) gs)
+  | cr.action == "down" = return (updatePlayerDelta pid 0 1 gs)
+  | cr.action == "left" = return (updatePlayerDelta pid (-1) 0 gs)
+  | cr.action == "right" = return (updatePlayerDelta pid 1 0 gs)
   | cr.action == "stop" = return (updatePlayerDelta pid 0 0 gs)
   | cr.action == "bomb" = updatePlayerBomb pid 1 gs
   | otherwise = return gs
@@ -637,6 +654,7 @@ data Action
   | OnMessage MisoString
   | OnClosed Closed
   | OnError MisoString
+  | ArrowKeys Arrows
   | Send
   | SendMessage MisoString
   | Update MisoString
@@ -654,6 +672,8 @@ data Model = Model
   , _connected :: Bool
   , _connections :: [WebSocket]
   , _clearInput :: Bool
+  , _currentGrid :: [[Int]]
+  , _lastArrowDir :: (Int, Int)
   , _boxId :: Int
   } deriving Eq
 -----------------------------------------------------------------------------
@@ -675,13 +695,17 @@ clearInput = lens _clearInput $ \r x -> r { _clearInput = x }
 boxId :: Lens Model Int
 boxId = lens _boxId $ \r x -> r { _boxId = x }
 -----------------------------------------------------------------------------
+lastArrowDir :: Lens Model (Int, Int)
+lastArrowDir = lens _lastArrowDir $ \r x -> r { _lastArrowDir = x }
+-----------------------------------------------------------------------------
 emptyModel :: Int -> Model
-emptyModel = Model mempty [] emptyWebSocket False [] True
+emptyModel = Model mempty [] emptyWebSocket False [] True emptyGrid (0, 0)
 -----------------------------------------------------------------------------
 websocketComponent :: Int -> M.Component parent Model Action
 websocketComponent box =
   (M.component (emptyModel box) updateModel viewModel)
     { M.events = M.defaultEvents <> M.keyboardEvents
+    , M.subs = [ arrowsSub ArrowKeys ]
     }
   where
     updateModel x = case x of
@@ -719,7 +743,7 @@ websocketComponent box =
         M.io $ do
           date <- M.newDate
           dateString <- date & M.toLocaleString
-          pure $ Append (Message dateString (MS.ms $ show ( decode (MS.fromMisoString message) :: Maybe ServerResponse)) SERVER)
+          pure $ Append (Message dateString message SERVER)
       Append message ->
         received %= (message :)
       OnError errorMessage ->
@@ -727,6 +751,20 @@ websocketComponent box =
       Update input -> do
         clearInput .= False
         msg .= input
+      ArrowKeys a -> do
+        let ax = a.arrowX
+            ay = a.arrowY
+            newDir = (ax, ay)
+        prevDir <- use lastArrowDir
+        when (newDir /= prevDir) $ do
+          lastArrowDir .= newDir
+          let sendAct s = M.issue (SendMessage (jsonRequest s))
+          if ax == 0 && ay == 0 then sendAct "stop"
+          else if ay == 1 then sendAct "up"
+          else if ay == -1 then sendAct "down"
+          else if ax == -1 then sendAct "left"
+          else if ax == 1 then sendAct "right"
+          else pure ()
       NoOp ->
         pure ()
       CloseBox ->
@@ -801,42 +839,10 @@ viewModel m =
       ]
     , H.div_
       [ P.class_ "websocket-input"]
-      [ H.button_ [H.onClick (SendMessage (jsonRequest "up"))] [M.text "Up"]
-        , H.button_ [H.onClick (SendMessage (jsonRequest "down"))] [M.text "Down"]
-        , H.button_ [H.onClick (SendMessage (jsonRequest "left"))] [M.text "Left"]
-        , H.button_ [H.onClick (SendMessage (jsonRequest "right"))] [M.text "Right"]
-        , H.button_ [H.onClick (SendMessage (jsonRequest "stop"))] [M.text "Stop"]
-        , H.button_ [H.onClick (SendMessage (jsonRequest "bomb"))] [M.text "Bomb"]
-       ]
-    -- , H.div_
-    --   [ P.class_ "websocket-input" ]
-    --   [ H.input_ $
-    --     [ P.placeholder_ "Type a message..."
-    --     , P.class_ "input-field message-input"
-    --     , H.onInput Update
-    --     , H.onEnter NoOp Send
-    --     , P.type_ "text"
-    --     ] ++
-    --     [ P.disabled_
-    --     | not (m ^. connected)
-    --     ] ++
-    --     [ P.value_ ""
-    --     | m ^. clearInput
-    --     ]
-    --   , M.optionalAttrs
-    --     H.button_
-    --     [ P.class_ "btn btn-primary send-btn"
-    --     , H.onClick Send
-    --     ]
-    --     (not (m ^. connected))
-    --     [ P.disabled_ ]
-    --     [ "Send"
-    --     ]
-    --   ]
-
+      [ H.button_ [H.onClick (SendMessage (jsonRequest "bomb"))] [M.text "Bomb"]
+      ]
     , H.div_
-      [ P.class_ "messages-list"
-      ] $
+      [ P.id_ "gameGrid" ] $
       if null (m ^. received)
       then
         pure $ H.div_
@@ -844,7 +850,10 @@ viewModel m =
           ]
           [ "No messages yet"
           ]
-      else messageHeader (m ^. received)
+      else
+      [ 
+        renderGrid (m ^. received)
+      ]
     ]
 -----------------------------------------------------------------------------
 messageHeader :: [Message] -> [ M.View model action ]
@@ -860,5 +869,163 @@ messageHeader messages = concat
   | Message dateString message origin <- messages
   ]
 -----------------------------------------------------------------------------
+renderGrid :: [Message] -> M.View Model Action
+renderGrid messages =
+  let validMessages = filter isStateUpdateMessage messages
+  in case validMessages of
+    [] -> H.div_ [] [M.text "No game state available"]
+    _ ->
+      let lastMessage = head validMessages
+          msgContent = case lastMessage of
+            Message _ c _ -> c
+          maybeResponse = decode (MS.fromMisoString msgContent) :: Maybe ServerResponse
+       in case maybeResponse of
+            Nothing -> H.div_ [] [M.text "Failed to parse game state"]
+            Just response ->
+              case response.gameState of
+                Nothing -> H.div_ [] [M.text "No game state in response"]
+                Just gs -> renderGameGrid gs
+  where
+    isStateUpdateMessage :: Message -> Bool
+    isStateUpdateMessage (Message _ content _) = 
+      case decode (MS.fromMisoString content) :: Maybe ServerResponse of
+        Just resp -> resp.tag == "StateUpdate"
+        Nothing -> False
+
+-- Render both the grid and players
+renderGameGrid :: GameState -> M.View Model Action
+renderGameGrid gs =
+  H.div_ 
+  [ P.id_ "game-container"
+  , CSS.style_ [ CSS.position "relative"
+               , CSS.width "600px"
+               , CSS.height "520px"
+               ]
+  ]
+  [ -- Grid layer
+    -- Game info / timer (placeholder for live countdown)
+    H.div_
+    [ P.class_ "game-info"
+    , CSS.style_ [ CSS.position "relative", CSS.marginBottom "8px", CSS.textAlign "center" ]
+    ]
+    [ H.span_ [] [ M.text (MS.ms ("Game Duration: " ++ show gs.gameDuration ++ "s | Status: " ++ if gs.isGameStarted then "Started" else "Waiting")) ] ]
+
+  , H.div_ 
+    [ P.id_ "grid"
+    , CSS.style_ [ CSS.display "grid"
+                 , CSS.gridTemplateColumns "repeat(15, 40px)"
+                 , CSS.gridTemplateRows "repeat(13, 40px)"
+                 , CSS.position "absolute"
+                 , CSS.top "40px"
+                 , CSS.left "0"
+                 , CSS.zIndex "0"
+                 ]
+    ]
+    (concatMap renderRow gs.grid)
+    
+    -- Players layer (on top of grid)
+  , H.div_
+    [ CSS.style_ [ CSS.position "absolute"
+                 , CSS.top "40px"
+                 , CSS.left "0"
+                 , CSS.zIndex "1"
+                 , CSS.width "100%"
+                 , CSS.height "100%"
+                 ]
+    ]
+    (map renderPlayer gs.players)
+
+    -- Bombs layer (on top of players)
+  , H.div_
+    [ CSS.style_ [ CSS.position "absolute"
+                 , CSS.top "40px"
+                 , CSS.left "0"
+                 , CSS.zIndex "2"
+                 , CSS.width "100%"
+                 , CSS.height "100%"
+                 ]
+    ]
+    (map renderBomb gs.bombs)
+
+    -- Powerups layer (on top of bombs)
+  , H.div_
+    [ CSS.style_ [ CSS.position "absolute"
+                 , CSS.top "40px"
+                 , CSS.left "0"
+                 , CSS.zIndex "2"
+                 , CSS.width "100%"
+                 , CSS.height "100%"
+                 ]
+    ]
+    (map renderPowerup gs.powerups)
+  ]
+
+-- Render a single row of grid cells
+renderRow :: [Int] -> [M.View Model Action]
+renderRow row = 
+  map (\cell -> 
+    H.img_ [ P.src_ (getSrc cell)
+           , CSS.style_ [ CSS.width "40px"
+                        , CSS.height "40px"
+                        ]
+           ]
+  ) row
+
+-- Render a single player
+renderPlayer :: Player -> M.View Model Action
+renderPlayer player =
+  let xPos = (player.x - 1) * 40.0  -- Convert from grid coordinates (1-based) to pixels
+      yPos = (player.y - 1) * 40.0
+  in H.img_
+     [ P.src_ (M.ms ("../images/player" ++ show (player.id + 1) ++ ".png"))
+     , CSS.style_ [ CSS.position "absolute"
+                  , CSS.left (MS.ms (show (floor xPos :: Int) ++ "px"))
+                  , CSS.top (MS.ms (show ((floor yPos) :: Int) ++ "px"))
+                  , CSS.width "40px"
+                  , CSS.height "40px"
+                  , CSS.zIndex "1"
+                  ]
+     ]
+  
+-- Render a single bomb
+renderBomb :: Bomb -> M.View Model Action
+renderBomb bomb =
+  let xPos = (bomb.x - 1) * 40  -- Convert from grid coordinates (1-based) to pixels
+      yPos = (bomb.y - 1) * 40
+  in H.img_
+     [ P.src_ (M.ms "../images/bomb.png")
+     , CSS.style_ [ CSS.position "absolute"
+                  , CSS.left (MS.ms (show xPos ++ "px"))
+                  , CSS.top (MS.ms (show yPos ++ "px"))
+                  , CSS.width "40px"
+                  , CSS.height "40px"
+                  , CSS.zIndex "1"
+                  ]
+     ]
+
+-- Render a single powerup
+renderPowerup :: Powerup -> M.View Model Action
+renderPowerup powerup =
+  let xPos = (powerup.x - 1) * 40  -- Convert from grid coordinates (1-based) to pixels
+      yPos = (powerup.y - 1) * 40
+  in H.img_
+     [ P.src_ (M.ms ("../images/powerup_" ++ show powerup.name ++ ".png"))
+     , CSS.style_ [ CSS.position "absolute"
+                  , CSS.left (MS.ms (show xPos ++ "px"))
+                  , CSS.top (MS.ms (show yPos ++ "px"))
+                  , CSS.width "40px"
+                  , CSS.height "40px"
+                  , CSS.zIndex "1"
+                  ]
+     ]
+
+getSrc :: Int -> MisoString
+getSrc 0 = "../images/floor.png"      -- Empty cell
+getSrc 1 = "../images/wall_soft.png"  -- Breakable wall
+getSrc 2 = "../images/wall_hard.png"  -- Unbreakable wall
+getSrc _ = "../images/error.png"      -- Fallback for unexpected values
+
+-----------------------------------------------------------------------------
 mainClient :: IO ()
-mainClient = M.run $ M.startApp (websocketComponent 0)
+mainClient = M.run $ M.startApp (websocketComponent 0) -- 0 is the socket id
+
