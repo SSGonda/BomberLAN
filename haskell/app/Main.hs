@@ -11,9 +11,8 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 module Main where
 import Data.Text (Text)
-import Data.ByteString.Lazy (ByteString)
 import Control.Exception (finally, catch, throwIO, SomeException)
-import Control.Monad (forM_, forever, unless, foldM, when, void)
+import Control.Monad (forM_, forever, unless, foldM, when)
 import Control.Concurrent (MVar, newMVar, modifyMVar_, modifyMVar, readMVar, threadDelay, forkIO)
 import qualified Network.WebSockets as WS
 import System.Environment (getArgs)
@@ -28,7 +27,7 @@ import Miso.WebSocket
     ( emptyWebSocket, close, connectText, sendText, Closed, WebSocket )
 import           Miso.String (ToMisoString, MisoString)
 import qualified Miso.String as MS
-import Data.Time (UTCTime, getCurrentTime, nominalDiffTimeToSeconds, diffUTCTime, addUTCTime, getTime_resolution)
+import Data.Time (UTCTime, getCurrentTime, nominalDiffTimeToSeconds, diffUTCTime, addUTCTime)
 import System.Random (getStdRandom, randomR)
 import Data.List (partition)
 
@@ -898,9 +897,9 @@ renderGameGrid gs =
                ]
   ]
   [ -- Grid layer
-    -- Game info / timer (placeholder for live countdown)
+    -- Timer
     H.div_
-    [ P.class_ "game-info"
+    [ P.id_ "timer"
     , CSS.style_ [ CSS.position "relative", CSS.marginBottom "8px", CSS.textAlign "center" ]
     ]
     [ H.span_ [] [ M.text (MS.ms ("Time Left: " ++ show (gs.timeRemaining `div` 60) ++ ":" ++ show (gs.timeRemaining `mod` 60))) ] ]
@@ -957,14 +956,7 @@ renderGameGrid gs =
 
 -- Render a single row of grid cells
 renderRow :: [Int] -> [M.View Model Action]
-renderRow row = 
-  map (\cell -> 
-    H.img_ [ P.src_ (getSrc cell)
-           , CSS.style_ [ CSS.width "40px"
-                        , CSS.height "40px"
-                        ]
-           ]
-  ) row
+renderRow = map (\ cell -> H.img_ [P.src_ (getSrc cell), CSS.style_ [CSS.width "40px", CSS.height "40px"]])
 
 -- Render a single player
 renderPlayer :: Player -> M.View Model Action
@@ -975,7 +967,7 @@ renderPlayer player =
      [ P.src_ (M.ms ("../images/player" ++ show (player.id + 1) ++ ".png"))
      , CSS.style_ [ CSS.position "absolute"
                   , CSS.left (MS.ms (show (floor xPos :: Int) ++ "px"))
-                  , CSS.top (MS.ms (show ((floor yPos) :: Int) ++ "px"))
+                  , CSS.top (MS.ms (show (floor yPos :: Int) ++ "px"))
                   , CSS.width "40px"
                   , CSS.height "40px"
                   , CSS.zIndex "1"
