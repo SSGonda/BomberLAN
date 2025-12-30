@@ -147,7 +147,8 @@ instance ToJSON ServerResponse
 
 data ClientRequest = ClientRequest {
   tag :: Text,
-  action :: Text
+  action :: Text,
+  player :: Int
 } deriving (Generic, Show)
 
 instance FromJSON ClientRequest
@@ -749,6 +750,7 @@ websocketComponent box =
         msg .= input
       KeyboardEvent keys -> do
         -- Arrow keys (orthogonal only - first pressed wins)
+        clientNumber <- use boxId
         let safeHead [] = -1
             safeHead (x':_) = x'
             action = case safeHead (IntSet.elems keys) of
@@ -768,11 +770,11 @@ websocketComponent box =
         
         when (newDir /= prevDir) $ do
           lastArrowDir .= newDir
-          M.issue (SendMessage (jsonRequest action))
+          M.issue (SendMessage (jsonRequest action clientNumber))
         
         -- Spacebar for bomb
         when (IntSet.member 32 keys) $ do
-          M.issue (SendMessage (jsonRequest "bomb"))
+          M.issue (SendMessage (jsonRequest "bomb" clientNumber))
       NoOp ->
         pure ()
       CloseBox ->
@@ -785,10 +787,11 @@ websocketComponent box =
         received .= []
       _ -> pure ()
 --------------
-jsonRequest :: Text -> MisoString
-jsonRequest a = MS.ms (encode ClientRequest {
+jsonRequest :: Text -> Int -> MisoString
+jsonRequest a p = MS.ms (encode ClientRequest {
   tag = "ClientUpdate",
-  action = a
+  action = a,
+  player = p
 })
 -----------------------------------------------------------------------------
 viewModel :: Model -> M.View Model Action
