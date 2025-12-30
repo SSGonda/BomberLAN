@@ -11,13 +11,15 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 module Main where
 import Data.Text (Text)
+import Data.IntSet (IntSet)
+import qualified Data.IntSet as IntSet
 import Control.Exception (finally, catch, throwIO, SomeException)
 import Control.Monad (forM_, forever, unless, foldM, when)
 import Control.Concurrent (MVar, newMVar, modifyMVar_, modifyMVar, readMVar, threadDelay, forkIO)
 import qualified Network.WebSockets as WS
 import System.Environment (getArgs)
 import qualified Miso as M
-import Miso.Subscription.Keyboard (arrowsSub, Arrows)
+import Miso.Subscription.Keyboard (arrowsSub, Arrows, keyboardSub)
 import qualified Miso.Html as H
 import qualified Miso.Html.Property as P
 import qualified Miso.CSS as CSS
@@ -34,7 +36,7 @@ import Data.List (partition)
 import Data.Aeson (ToJSON, FromJSON, encode, decode)
 import qualified Data.ByteString.Lazy as BL
 import Data.Ix (Ix(range))
-import Data.Functor ( (<&>) )  
+import Data.Functor ( (<&>) )
 
 -- Check whether to run a server or client
 
@@ -152,7 +154,7 @@ instance FromJSON ClientRequest
 instance ToJSON ClientRequest
 
 initPlayerPositions :: [(Int, Float, Float)] -- id, x, y
-initPlayerPositions = [(0, 2.0, 2.0), (1, 2.0, 12.0), (2, 14.0, 12.0), (3, 14.0, 2.0)]
+initPlayerPositions = [(0, 1.0, 1.0), (1, 1.0, 13.0), (2, 11.0, 13.0), (3, 11.0, 1.0)]
 
 initPlayer :: Int -> Float -> Float -> Player
 initPlayer id x y = Player {
@@ -397,10 +399,6 @@ explosionPositions r = [(0, 0)]
 spawnPowerup :: Text -> Int -> Int -> [Powerup] -> [Powerup]
 spawnPowerup name x y ps = Powerup { name = name, x = x, y = y } : ps
 
--- Convert a 1-based float grid coordinate to 0-based grid index for lists
-posToIdx :: Float -> Int
-posToIdx f = floor f - 1
-
 spawnPowerupWithProbability :: [Powerup] -> Int -> Int -> Int -> IO [Powerup]
 spawnPowerupWithProbability ps p x y = do
   r <- getStdRandom (randomR (0, 99))
@@ -419,8 +417,7 @@ spawnPowerupWithProbability ps p x y = do
 
 explodeCoord :: Int -> (Int, Int) -> UTCTime -> GameState -> IO GameState
 explodeCoord r (x, y) currentTime gs = do
-  -- softs contains (row, col) pairs (0-based). spawn powerups use 1-based grid coords.
-  powerups'' <- foldM (\p (r, c) -> spawnPowerupWithProbability p 10 (c + 1) (r + 1)) powerups' softs
+  powerups'' <- foldM (\p (i, j) -> spawnPowerupWithProbability p 10 i j) powerups' softs
   return gs { grid = grid', bombs = bombs', powerups = powerups'', explosions = explosions' }
   where
     categorizeBlocks :: [(Int, Int)] -> [[Int]] -> ([(Int, Int)], [(Int, Int)])
@@ -439,8 +436,7 @@ explodeCoord r (x, y) currentTime gs = do
 
     placeExplosives :: [(Int, Int)] -> [Explosion] -> [Explosion]
     placeExplosives [] es = es
-    -- input list contains (row, col) (0-based); store explosions as 1-based coords (x=col+1, y=row+1)
-    placeExplosives ((i, j) : coords) es = Explosion { timePlaced = currentTime, x = j + 1, y = i + 1 } : placeExplosives coords es
+    placeExplosives ((i, j) : coords) es = Explosion { timePlaced = currentTime, x = i, y = j } : placeExplosives coords es
 
     detonateBombs :: [(Int, Int)] -> [Bomb] -> [Bomb]
     detonateBombs [] bs = bs
@@ -450,19 +446,15 @@ explodeCoord r (x, y) currentTime gs = do
         detonateBomb :: (Int, Int) -> [Bomb] -> [Bomb]
         detonateBomb _ [] = []
         detonateBomb (i, j) (b : bs')
-          -- explodables list contains (row=i, col=j) (0-based); bombs store 1-based coords (x=col+1, y=row+1)
-          | b.x == j + 1 && b.y == i + 1 = b { maxTime = 0 } : bs' -- TODO HORRIBLE HACK TO MAKE A BOMB EXPLODE ON THE NEXT TICK, which is at least 16 ms
+          | b.x == i && b.y == j = b { maxTime = 0 } : bs' -- TODO HORRIBLE HACK TO MAKE A BOMB EXPLODE ON THE NEXT TICK, which is at least 16 ms
           | otherwise = b : detonateBomb (i, j) bs'
 
     removePowerups :: [(Int, Int)] -> [Powerup] -> [Powerup]
     removePowerups [] ps = ps
     removePowerups _ [] = []
-    -- explodables are (row=i, col=j) (0-based); powerups store 1-based coords (x=col+1, y=row+1)
-    removePowerups ((i, j) : coords) ps = removePowerups coords (filter (\p -> p.x /= j + 1 || p.y /= i + 1) ps)
+    removePowerups ((i, j) : coords) ps = removePowerups coords (filter (\p -> p.x /= i || p.y /= j) ps)
 
-    -- explosionPositions provides (dx,dy) where dx is column offset, dy is row offset.
-    -- bombs are 1-based; convert to 0-based indices when indexing into the grid.
-    (explodables, softs) = categorizeBlocks (map (\(dx, dy) -> ((y - 1) + dy, (x - 1) + dx)) (explosionPositions r)) gs.grid
+    (explodables, softs) = categorizeBlocks (map (\(i, j) -> (i + x, j + y)) (explosionPositions r)) gs.grid
 
     grid' = removeSoft softs gs.grid
     bombs' = detonateBombs explodables gs.bombs
@@ -571,7 +563,7 @@ updatePlayerBomb pid delta gs = do
   let p = safeIndex pid gs.players
   case p of
     Just pl -> if pl.currentBombs < pl.maxBombs && pl.isAlive then do
-      bomb <- initBomb pl.id (floor pl.x) (floor pl.y) 3 pl.bombRange
+      bomb <- initBomb pl.id (round pl.x) (round pl.y) 3 pl.bombRange
       let players' = replace ((pl { currentBombs = pl.currentBombs + delta }) :: Player) pid gs.players
       return gs { players = players', bombs = bomb : gs.bombs }
       else return gs
@@ -606,17 +598,14 @@ updatePlayerPosition gs p = p { x = x'', y = y'' }
     x' = p.x + fromIntegral p.deltaX * p.speed
     y' = p.y + fromIntegral p.deltaY * p.speed
 
-    -- Convert positions to 0-based grid indices when checking collisions.
-    positionsToCheck = map (\(dx, dy) -> (posToIdx y' + dy, posToIdx x' + dx)) (explosionPositions 1)
+    positionsToCheck = map (\(i, j) -> (i + round x', j + round y')) (explosionPositions 1)
     collideableGridPositions = getCollideable positionsToCheck gs.grid
 
     bombDistances = map (\b -> (distance p.x p.y b.x b.y, distance x' y' b.x b.y)) gs.bombs
 
-    -- Threshold 0.5 for bombs matches player sprite size (40x40 sprite = ~0.5 grid units)
     isGoingToBomb = any (\(before, after) -> before >= 0.5 && after < 0.5) bombDistances
 
-    -- collideableGridPositions contains (row, col); isCollideWithPlayer expects (ex,ey)=(col,row) in 1-based coords
-    (x'', y'') = if any (\(r, c) -> isCollideWithPlayer 0.8 x' y' (c + 1) (r + 1)) collideableGridPositions || isGoingToBomb || not p.isAlive then (p.x, p.y) else (x', y')
+    (x'', y'') = if any (uncurry (isCollideWithPlayer 0.8 x' y')) collideableGridPositions || isGoingToBomb || not p.isAlive then (p.x, p.y) else (x', y')
 
 updatePlayerPositions :: GameState -> GameState
 updatePlayerPositions gs = gs { players = map (updatePlayerPosition gs) gs.players }
@@ -624,10 +613,10 @@ updatePlayerPositions gs = gs { players = map (updatePlayerPosition gs) gs.playe
 parseClientRequest :: Int -> ClientRequest -> GameState -> IO GameState
 parseClientRequest pid cr gs
   | gs.isGameOver || not gs.isGameStarted = return gs
-  | cr.action == "up" = return (updatePlayerDelta pid 0 (-1) gs)
-  | cr.action == "down" = return (updatePlayerDelta pid 0 1 gs)
-  | cr.action == "left" = return (updatePlayerDelta pid (-1) 0 gs)
-  | cr.action == "right" = return (updatePlayerDelta pid 1 0 gs)
+  | cr.action == "up" = return (updatePlayerDelta pid (-1) 0 gs)
+  | cr.action == "down" = return (updatePlayerDelta pid 1 0 gs)
+  | cr.action == "left" = return (updatePlayerDelta pid 0 (-1) gs)
+  | cr.action == "right" = return (updatePlayerDelta pid 0 1 gs)
   | cr.action == "stop" = return (updatePlayerDelta pid 0 0 gs)
   | cr.action == "bomb" = updatePlayerBomb pid 1 gs
   | otherwise = return gs
@@ -662,6 +651,7 @@ data Action
   | OnClosed Closed
   | OnError MisoString
   | ArrowKeys Arrows
+  | KeyboardEvent IntSet
   | Send
   | SendMessage MisoString
   | Update MisoString
@@ -712,7 +702,7 @@ websocketComponent :: Int -> M.Component parent Model Action
 websocketComponent box =
   (M.component (emptyModel box) updateModel viewModel)
     { M.events = M.defaultEvents <> M.keyboardEvents
-    , M.subs = [ arrowsSub ArrowKeys ]
+    , M.subs = [ arrowsSub ArrowKeys, keyboardSub KeyboardEvent ]
     }
   where
     updateModel x = case x of
@@ -770,8 +760,10 @@ websocketComponent box =
           else if ay == 1 then sendAct "up"
           else if ay == -1 then sendAct "down"
           else if ax == -1 then sendAct "left"
-          else if ax == 1 then sendAct "right"
-          else pure ()
+          else when (ax == 1) $ sendAct "right"
+      KeyboardEvent key -> do
+        when (key == IntSet.singleton 32) $ -- spacebar
+          M.issue (SendMessage (jsonRequest "bomb"))
       NoOp ->
         pure ()
       CloseBox ->
@@ -961,8 +953,8 @@ renderRow = map (\ cell -> H.img_ [P.src_ (getSrc cell), CSS.style_ [CSS.width "
 -- Render a single player
 renderPlayer :: Player -> M.View Model Action
 renderPlayer player =
-  let xPos = (player.x - 1) * 40.0  -- Convert from grid coordinates (1-based) to pixels
-      yPos = (player.y - 1) * 40.0
+  let yPos = player.x  * 40.0  -- Convert from grid coordinates (1-based) to pixels
+      xPos = player.y * 40.0
   in H.img_
      [ P.src_ (M.ms ("../images/player" ++ show (player.id + 1) ++ ".png"))
      , CSS.style_ [ CSS.position "absolute"
@@ -977,8 +969,8 @@ renderPlayer player =
 -- Render a single bomb
 renderBomb :: Bomb -> M.View Model Action
 renderBomb bomb =
-  let xPos = (bomb.x - 1) * 40  -- Convert from grid coordinates (1-based) to pixels
-      yPos = (bomb.y - 1) * 40
+  let yPos = (bomb.x) * 40  -- Convert from grid coordinates (1-based) to pixels
+      xPos = (bomb.y) * 40
   in H.img_
      [ P.src_ (M.ms "../images/bomb.png")
      , CSS.style_ [ CSS.position "absolute"
@@ -993,8 +985,8 @@ renderBomb bomb =
 -- Render a single powerup
 renderPowerup :: Powerup -> M.View Model Action
 renderPowerup powerup =
-  let xPos = (powerup.x - 1) * 40  -- Convert from grid coordinates (1-based) to pixels
-      yPos = (powerup.y - 1) * 40
+  let xPos = (powerup.x) * 40  -- Convert from grid coordinates (1-based) to pixels
+      yPos = (powerup.y) * 40
   in H.img_
      [ P.src_ (M.ms ("../images/powerup_" ++ show powerup.name ++ ".png"))
      , CSS.style_ [ CSS.position "absolute"
