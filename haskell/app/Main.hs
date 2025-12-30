@@ -19,7 +19,7 @@ import Control.Concurrent (MVar, newMVar, modifyMVar_, modifyMVar, readMVar, thr
 import qualified Network.WebSockets as WS
 import System.Environment (getArgs)
 import qualified Miso as M
-import Miso.Subscription.Keyboard (arrowsSub, Arrows, keyboardSub)
+import Miso.Subscription.Keyboard (keyboardSub)
 import qualified Miso.Html as H
 import qualified Miso.Html.Property as P
 import qualified Miso.CSS as CSS
@@ -650,7 +650,6 @@ data Action
   | OnMessage MisoString
   | OnClosed Closed
   | OnError MisoString
-  | ArrowKeys Arrows
   | KeyboardEvent IntSet
   | Send
   | SendMessage MisoString
@@ -702,7 +701,7 @@ websocketComponent :: Int -> M.Component parent Model Action
 websocketComponent box =
   (M.component (emptyModel box) updateModel viewModel)
     { M.events = M.defaultEvents <> M.keyboardEvents
-    , M.subs = [ arrowsSub ArrowKeys, keyboardSub KeyboardEvent ]
+    , M.subs = [ keyboardSub KeyboardEvent ]
     }
   where
     updateModel x = case x of
@@ -748,21 +747,31 @@ websocketComponent box =
       Update input -> do
         clearInput .= False
         msg .= input
-      ArrowKeys a -> do
-        let ax = a.arrowX
-            ay = a.arrowY
-            newDir = (ax, ay)
+      KeyboardEvent keys -> do
+        -- Arrow keys (orthogonal only - first pressed wins)
+        let safeHead [] = -1
+            safeHead (x':_) = x'
+            action = case safeHead (IntSet.elems keys) of
+                      37 -> "left"
+                      38 -> "up"
+                      39 -> "right"
+                      40 -> "down"
+                      _ -> "stop"
+        
         prevDir <- use lastArrowDir
+        let newDir = case action of
+                      "left"  -> (0, -1)
+                      "right" -> (0, 1)
+                      "up"    -> (-1, 0)
+                      "down"  -> (1, 0)
+                      _       -> (0, 0)
+        
         when (newDir /= prevDir) $ do
           lastArrowDir .= newDir
-          let sendAct s = M.issue (SendMessage (jsonRequest s))
-          if ax == 0 && ay == 0 then sendAct "stop"
-          else if ay == 1 then sendAct "up"
-          else if ay == -1 then sendAct "down"
-          else if ax == -1 then sendAct "left"
-          else when (ax == 1) $ sendAct "right"
-      KeyboardEvent key -> do
-        when (key == IntSet.singleton 32) $ -- spacebar
+          M.issue (SendMessage (jsonRequest action))
+        
+        -- Spacebar for bomb
+        when (IntSet.member 32 keys) $ do
           M.issue (SendMessage (jsonRequest "bomb"))
       NoOp ->
         pure ()
@@ -774,6 +783,7 @@ websocketComponent box =
         clearInput .= True
         msg .= ""
         received .= []
+      _ -> pure ()
 --------------
 jsonRequest :: Text -> MisoString
 jsonRequest a = MS.ms (encode ClientRequest {
@@ -827,18 +837,6 @@ viewModel m =
         (not (m ^. connected))
         [ P.disabled_ ]
         ["Disconnect"]
-      , M.optionalAttrs
-        H.button_
-        [ P.class_ "btn btn-primary"
-        , H.onClick Clear
-        ]
-        (null (m ^. received))
-        [ P.disabled_ ]
-        ["Clear"]
-      ]
-    , H.div_
-      [ P.class_ "websocket-input"]
-      [ H.button_ [H.onClick (SendMessage (jsonRequest "bomb"))] [M.text "Bomb"]
       ]
     , H.div_
       [ P.id_ "gameGrid" ] $
@@ -919,7 +917,7 @@ renderGameGrid gs =
                  , CSS.height "100%"
                  ]
     ]
-    (map renderPlayer gs.players)
+    (map renderPlayer (filter (\player -> player.isAlive) gs.players))
 
     -- Bombs layer (on top of players)
   , H.div_
@@ -944,6 +942,18 @@ renderGameGrid gs =
                  ]
     ]
     (map renderPowerup gs.powerups)
+  
+    -- Explosions layer (on top of powerups)
+  , H.div_
+    [ CSS.style_ [ CSS.position "absolute"
+                 , CSS.top "40px"
+                 , CSS.left "0"
+                 , CSS.zIndex "3"
+                 , CSS.width "100%"
+                 , CSS.height "100%"
+                 ]
+    ]
+    (map renderExplosion gs.explosions)
   ]
 
 -- Render a single row of grid cells
@@ -987,8 +997,30 @@ renderPowerup :: Powerup -> M.View Model Action
 renderPowerup powerup =
   let xPos = (powerup.x) * 40  -- Convert from grid coordinates (1-based) to pixels
       yPos = (powerup.y) * 40
+      getPowerName :: Text -> String
+      getPowerName name
+        | name == "fireup" = "fire"
+        | name == "bombup" = "bomb"
+        | name == "speedup" = "speed"
+        | otherwise = "unknown"
   in H.img_
-     [ P.src_ (M.ms ("../images/powerup_" ++ show powerup.name ++ ".png"))
+     [ P.src_ (M.ms ("../images/powerup_" ++ getPowerName powerup.name ++ ".png"))
+     , CSS.style_ [ CSS.position "absolute"
+                  , CSS.left (MS.ms (show xPos ++ "px"))
+                  , CSS.top (MS.ms (show yPos ++ "px"))
+                  , CSS.width "40px"
+                  , CSS.height "40px"
+                  , CSS.zIndex "1"
+                  ]
+     ]
+
+-- Render single explosion
+renderExplosion :: Explosion -> M.View Model Action
+renderExplosion explosion =
+  let yPos = (explosion.x) * 40  -- Convert from grid coordinates (1-based) to pixels
+      xPos = (explosion.y) * 40
+  in H.img_
+     [ P.src_ (M.ms "../images/explosion.png")
      , CSS.style_ [ CSS.position "absolute"
                   , CSS.left (MS.ms (show xPos ++ "px"))
                   , CSS.top (MS.ms (show yPos ++ "px"))
