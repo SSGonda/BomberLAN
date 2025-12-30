@@ -28,7 +28,7 @@ import Miso.WebSocket
     ( emptyWebSocket, close, connectText, sendText, Closed, WebSocket )
 import           Miso.String (ToMisoString, MisoString)
 import qualified Miso.String as MS
-import Data.Time (UTCTime, getCurrentTime, nominalDiffTimeToSeconds, diffUTCTime)
+import Data.Time (UTCTime, getCurrentTime, nominalDiffTimeToSeconds, diffUTCTime, addUTCTime, getTime_resolution)
 import System.Random (getStdRandom, randomR)
 import Data.List (partition)
 
@@ -123,6 +123,7 @@ data GameState = GameState {
   isGameStarted :: Bool,
   isGameOver :: Bool,
   gameStartTime :: UTCTime,
+  timeRemaining :: Int,
   winner :: Maybe Int,
   players :: [Player],
   bombs :: [Bomb],
@@ -217,6 +218,7 @@ initGameState numPlayers gameDuration = do
     isGameStarted = False,
     isGameOver = False,
     gameStartTime = currentTime, -- Dummy start time
+    timeRemaining = gameDuration,
     winner = Nothing,
     players = makePlayers numPlayers,
     bombs = [],
@@ -224,6 +226,12 @@ initGameState numPlayers gameDuration = do
     explosions = [],
     grid = grid
   }
+
+getTimeRemaining :: UTCTime -> GameState -> Int
+getTimeRemaining currentTime gs
+  | not gs.isGameStarted = gs.gameDuration
+  | gs.isGameOver = 0
+  | otherwise = max 0 (floor (nominalDiffTimeToSeconds (diffUTCTime (addUTCTime (fromIntegral gs.gameDuration) gs.gameStartTime) currentTime)))
 
 newServerState :: Int -> Int -> IO ServerState
 newServerState maxPlayers duration = do
@@ -309,7 +317,7 @@ gameLoop state = forever $ do
     let gs = s.gameState
 
     gs' <-
-      if not gs.isGameStarted && (numClients s >= gs.maxPlayers) then return gs { isGameStarted = True, gameStartTime = currentTime } -- start the game
+      if not gs.isGameStarted && (numClients s >= gs.maxPlayers) then return gs { isGameStarted = True, gameStartTime = currentTime, timeRemaining = gs.gameDuration } -- start the game
       else if gs.isGameOver || not gs.isGameStarted then return gs -- game not started or game over
       else updateGameState currentTime gs -- update game
 
@@ -336,8 +344,8 @@ findWinner ps = winner
 
 updateCheckGameOver :: UTCTime -> GameState -> GameState
 updateCheckGameOver currentTime gs
-  | isExpired currentTime gs.gameStartTime gs.gameDuration = gs { isGameOver = True, winner = winr }
-  | otherwise = gs { isGameOver = gmover, winner = winr }
+  | isExpired currentTime gs.gameStartTime gs.gameDuration = gs { isGameOver = True, winner = winr, timeRemaining = 0 }
+  | otherwise = gs { isGameOver = gmover, winner = winr, timeRemaining = getTimeRemaining currentTime gs }
   where
     winr = findWinner gs.players
     gmover = case winr of
@@ -856,19 +864,6 @@ viewModel m =
       ]
     ]
 -----------------------------------------------------------------------------
-messageHeader :: [Message] -> [ M.View model action ]
-messageHeader messages = concat
-  [
-    [ H.div_
-      [ P.class_ "message-header" ]
-      [ H.span_ [P.class_ "message-origin"] [ M.text (MS.ms origin) ]
-      , H.span_ [P.class_ "timestamp"] [ M.text dateString ]
-      ]
-    , H.div_ [P.class_ "message-content"] [ M.text message ]
-    ]
-  | Message dateString message origin <- messages
-  ]
------------------------------------------------------------------------------
 renderGrid :: [Message] -> M.View Model Action
 renderGrid messages =
   let validMessages = filter isStateUpdateMessage messages
@@ -908,7 +903,7 @@ renderGameGrid gs =
     [ P.class_ "game-info"
     , CSS.style_ [ CSS.position "relative", CSS.marginBottom "8px", CSS.textAlign "center" ]
     ]
-    [ H.span_ [] [ M.text (MS.ms ("Game Duration: " ++ show gs.gameDuration ++ "s | Status: " ++ if gs.isGameStarted then "Started" else "Waiting")) ] ]
+    [ H.span_ [] [ M.text (MS.ms ("Time Left: " ++ show (gs.timeRemaining `div` 60) ++ ":" ++ show (gs.timeRemaining `mod` 60))) ] ]
 
   , H.div_ 
     [ P.id_ "grid"
