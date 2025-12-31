@@ -654,28 +654,25 @@ data Action
   | OnError MisoString
   | KeyboardEvent IntSet
   | SendMessage MisoString
-  | Append Message
+  | Update (Maybe GameState)
+  | ChangeStatus MisoString
   | Connect
   | Disconnect
   | CloseBox
 -----------------------------------------------------------------------------
 data Model = Model
   { _msg :: MisoString
-  , _received :: [Message]
   , _websocket :: WebSocket
   , _connected :: Bool
   , _connections :: [WebSocket]
-  , _clearInput :: Bool
-  , _currentGrid :: [[Int]]
+  , _currentGameState :: Maybe GameState
   , _lastArrowDir :: (Int, Int)
+  , _status :: Maybe MisoString
   , _boxId :: Int
   } deriving Eq
 -----------------------------------------------------------------------------
 msg :: Lens Model MisoString
 msg = lens _msg $ \r x -> r { _msg = x }
------------------------------------------------------------------------------
-received :: Lens Model [Message]
-received = lens _received $ \r x -> r { _received = x }
 -----------------------------------------------------------------------------
 websocket :: Lens Model WebSocket
 websocket = lens _websocket $ \r x -> r { _websocket = x }
@@ -683,17 +680,20 @@ websocket = lens _websocket $ \r x -> r { _websocket = x }
 connected :: Lens Model Bool
 connected = lens _connected $ \r x -> r { _connected = x }
 -----------------------------------------------------------------------------
-clearInput :: Lens Model Bool
-clearInput = lens _clearInput $ \r x -> r { _clearInput = x }
------------------------------------------------------------------------------
 boxId :: Lens Model Int
 boxId = lens _boxId $ \r x -> r { _boxId = x }
 -----------------------------------------------------------------------------
 lastArrowDir :: Lens Model (Int, Int)
 lastArrowDir = lens _lastArrowDir $ \r x -> r { _lastArrowDir = x }
 -----------------------------------------------------------------------------
+currentGameState :: Lens Model (Maybe GameState)
+currentGameState = lens _currentGameState $ \r x -> r { _currentGameState = x }
+-----------------------------------------------------------------------------
+status :: Lens Model (Maybe MisoString)
+status = lens _status $ \r x -> r { _status = x }
+-----------------------------------------------------------------------------
 emptyModel :: Int -> Model
-emptyModel = Model mempty [] emptyWebSocket False [] True emptyGrid (0, 0)
+emptyModel = Model mempty emptyWebSocket False [] Nothing (0, 0) Nothing
 -----------------------------------------------------------------------------
 websocketComponent :: Int -> M.Component parent Model Action
 websocketComponent box =
@@ -706,7 +706,9 @@ websocketComponent box =
       SendMessage m -> do
         socket <- use websocket
         sendText socket m
-      Connect ->
+      Connect -> do
+        currentGameState .= Nothing
+        status .= Just "Connecting..."
         connectText
           "ws:127.0.0.1:15000"
           OnOpen
@@ -722,18 +724,26 @@ websocketComponent box =
           date <- M.newDate
           dateString <- date & M.toLocaleString
           M.consoleLog $ MS.ms (show closed)
-          pure $ Append (Message dateString "Disconnected..." SYSTEM)
-      OnMessage message ->
-        M.io $ do
-          date <- M.newDate
-          dateString <- date & M.toLocaleString
-          pure $ Append (Message dateString message SERVER)
-      Append message ->
-        received %= (message :)
-      OnError errorMessage ->
+          pure $ ChangeStatus "Disconnected..."
+      OnMessage message -> do
+        case decode (MS.fromMisoString message) :: Maybe ServerResponse of
+          Just resp -> do
+            case resp.tag of
+              "StateUpdate" -> do
+                case resp.gameState of
+                  Just gs -> do 
+                    M.issue (Update (Just gs))
+                    status .= Nothing
+                  Nothing -> pure ()            
+              _ -> pure ()
+          Nothing -> status .= Just "Could not parse message"
+      Update gs ->
+        currentGameState .= gs
+      OnError errorMessage -> do
         M.io_ (M.consoleError errorMessage)
+        status .= Just ("Error: " <> errorMessage)
       KeyboardEvent keys -> do
-        -- Arrow keys (orthogonal only - first pressed wins)
+        isConnected <- use connected
         clientNumber <- use boxId
         let safeHead [] = -1
             safeHead (x':_) = x'
@@ -743,7 +753,6 @@ websocketComponent box =
                       39 -> "right"
                       40 -> "down"
                       _ -> "stop"
-        
         prevDir <- use lastArrowDir
         let newDir = case action of
                       "left"  -> (0, -1)
@@ -751,17 +760,17 @@ websocketComponent box =
                       "up"    -> (-1, 0)
                       "down"  -> (1, 0)
                       _       -> (0, 0)
-        
-        when (newDir /= prevDir) $ do
-          lastArrowDir .= newDir
+        when (isConnected && newDir /= prevDir) $ do
           M.issue (SendMessage (jsonRequest action clientNumber))
-        
-        -- Spacebar for bomb
-        when (IntSet.member 32 keys) $ do
+        when (isConnected && IntSet.member 32 keys) $ do
           M.issue (SendMessage (jsonRequest "bomb" clientNumber))
+        unless isConnected $
+          M.io_ $ M.consoleLog "Not connected, ignoring input"
       CloseBox ->
         M.broadcast box
-      Disconnect ->
+      Disconnect -> do
+        currentGameState .= Nothing
+        status .= Just "Disconnecting..."
         close =<< use websocket
       _ -> pure ()
 --------------
@@ -819,9 +828,21 @@ viewModel m =
         [ P.disabled_ ]
         ["Disconnect"]
       ]
+    , case m ^. status of
+      Just msg ->
+        H.div_
+        [ P.class_ "status-message"
+        , CSS.style_ 
+          [ CSS.margin "10px"
+          , CSS.padding "10px"
+          , CSS.textAlign "center"
+          ]
+        ]
+        [ M.text msg ]
+      Nothing -> H.div_ [] []
     , H.div_
       [ P.id_ "gameGrid" ] $
-      if null (m ^. received)
+      if (m ^. currentGameState) == Nothing
       then
         pure $ H.div_
           [ P.class_ "empty-state"
@@ -830,36 +851,14 @@ viewModel m =
           ]
       else
       [ 
-        renderGrid (m ^. received)
+        renderGameGrid (m ^. currentGameState)
       ]
     ]
 -----------------------------------------------------------------------------
-renderGrid :: [Message] -> M.View Model Action
-renderGrid messages =
-  let validMessages = filter isStateUpdateMessage messages
-  in case validMessages of
-    [] -> H.div_ [] [M.text "No game state available"]
-    _ ->
-      let lastMessage = head validMessages
-          msgContent = case lastMessage of
-            Message _ c _ -> c
-          maybeResponse = decode (MS.fromMisoString msgContent) :: Maybe ServerResponse
-       in case maybeResponse of
-            Nothing -> H.div_ [] [M.text "Failed to parse game state"]
-            Just response ->
-              case response.gameState of
-                Nothing -> H.div_ [] [M.text "No game state in response"]
-                Just gs -> renderGameGrid gs
-  where
-    isStateUpdateMessage :: Message -> Bool
-    isStateUpdateMessage (Message _ content _) = 
-      case decode (MS.fromMisoString content) :: Maybe ServerResponse of
-        Just resp -> resp.tag == "StateUpdate"
-        Nothing -> False
-
 -- Render both the grid and players
-renderGameGrid :: GameState -> M.View Model Action
-renderGameGrid gs =
+renderGameGrid :: Maybe GameState -> M.View Model Action
+renderGameGrid Nothing = H.div_ [] [M.text "No game state available"]
+renderGameGrid (Just gs) =
   H.div_ 
   [ P.id_ "game-container"
   , CSS.style_ [ CSS.position "relative"
