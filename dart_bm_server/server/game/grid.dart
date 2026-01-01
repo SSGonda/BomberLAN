@@ -1,6 +1,7 @@
 import 'dart:math';
 import 'dart:math' as math;
 import '../utils/constants.dart';
+import '../utils/helper.dart';
 
 enum CellType { empty, hardBlock, softBlock, powerup, bomb, explosion }
 
@@ -48,21 +49,31 @@ class Grid {
   }
 
   bool isWalkable(Point<double> position) {
-    final gridX = position.x.floor();
-    final gridY = position.y.floor();
-
-    // print("new pos in is walkable: $position");
+    // find all 4 corners of sprite
+    var topLeft = position;
+    var topRight = preciseAdd(position, Point(0.8, 0));
+    var botLeft = preciseAdd(position, Point(0, 0.8));
+    var botRight = preciseAdd(position, Point(0.8, 0.8));
+    List<Point> spriteCorners = [topLeft, topRight, botLeft, botRight];
 
     if (position.x <= 0 ||
         position.x >= cols ||
         position.y <= 0 ||
         position.y >= rows) {
-      // print("not walkable");
       return false;
     }
 
-    final cellType = cells[gridY][gridX];
-    return cellType == CellType.empty || cellType == CellType.powerup;
+    // check all 4 corners of sprite
+    for (final cell in spriteCorners) {
+      final gridX = cell.x.floor();
+      final gridY = cell.y.floor();
+
+      final cellType = cells[gridY][gridX];
+      if (cellType == CellType.hardBlock || cellType == CellType.softBlock) {
+        return false;
+      }
+    }
+    return true;
   }
 
   bool hasBlock(Point<int> position) {
@@ -100,10 +111,10 @@ class Grid {
   Point<double> getPlayerStartPosition(int playerNumber, int totalPlayers) {
     // starting positions for players
     final startPositions = [
-      Point<double>(1.50, 1.50), // Top-left
-      Point<double>(cols - 1.50, 1.50), // Top-right
-      Point<double>(1.50, rows - 1.50), // Bottom-left
-      Point<double>(cols - 1.50, rows - 1.50), // Bottom-right
+      Point<double>(1.00, 1.00), // Top-left
+      Point<double>(cols - 2.00, 1.00), // Top-right
+      Point<double>(1.00, rows - 2.00), // Bottom-left
+      Point<double>(cols - 2.00, rows - 2.00), // Bottom-right
     ];
 
     return startPositions[playerNumber % startPositions.length];

@@ -97,8 +97,8 @@ class GameState {
 
     final bombPosition = Point<int>(
       //changed to round
-      player.position.x.floor(),
-      player.position.y.floor(),
+      player.position.x.round(),
+      player.position.y.round(),
     );
 
     // Check if there's already a bomb at this position
@@ -150,8 +150,9 @@ class GameState {
       if (grid.hasSoftBlock(cell.position)) {
         grid.destroySoftBlock(cell.position);
 
-        // Chance to spawn powerup
+        // if (true) {
         if (Random().nextDouble() < GameConstants.powerupSpawnChance) {
+          // final powerupTypes = ['fire_up'];
           final powerupTypes = ['fire_up', 'bomb_up', 'speed_up'];
           final powerupType =
               powerupTypes[Random().nextInt(powerupTypes.length)];
@@ -169,8 +170,8 @@ class GameState {
       for (final player in players) {
         if (player.isAlive) {
           final playerCell = Point<int>(
-            player.position.x.floor(),
-            player.position.y.floor(),
+            player.position.x.round(),
+            player.position.y.round(),
           );
           if (playerCell == cell.position) {
             player.isAlive = false;
@@ -207,17 +208,14 @@ class GameState {
     // update player positions
     for (final player in players) {
       if (player.isAlive) {
-        // print(player.position);
         if (grid.isWalkable(player.calculateNewPos())) {
-          // print('walkable');
           player.updatePosition();
         }
-        // print(player.position);
 
         //  powerup collisions
         final playerCell = Point<int>(
-          player.position.x.floor(),
-          player.position.y.floor(),
+          player.position.x.round(),
+          player.position.y.round(),
         );
 
         final powerupsToRemove = <String>[];

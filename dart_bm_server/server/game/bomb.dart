@@ -60,47 +60,47 @@ class Bomb {
     cells.add(Explosion(id: explosionId, position: position)); // Center cell
 
     for (int i = 1; i <= range; i++) {
-      if (!grid.hasHardBlock(Point(position.x, position.y - i))) {
-        cells.add(
-          Explosion(
-            id: explosionId,
-            position: Point(position.x, position.y - i),
-          ),
-        );
+      if (grid.hasHardBlock(Point(position.x, position.y - i))) {
+        break;
       }
+      // if (!grid.hasHardBlock(Point(position.x, position.y - i))) {
+      cells.add(
+        Explosion(id: explosionId, position: Point(position.x, position.y - i)),
+      );
+      // }
     }
 
     for (int i = 1; i <= range; i++) {
-      if (!grid.hasHardBlock(Point(position.x, position.y + i))) {
-        cells.add(
-          Explosion(
-            id: explosionId,
-            position: Point(position.x, position.y + i),
-          ),
-        );
+      if (grid.hasHardBlock(Point(position.x, position.y + i))) {
+        break;
       }
+      // if (!grid.hasHardBlock(Point(position.x, position.y + i))) {
+      cells.add(
+        Explosion(id: explosionId, position: Point(position.x, position.y + i)),
+      );
+      // }
     }
 
     for (int i = 1; i <= range; i++) {
-      if (!grid.hasHardBlock(Point(position.x - i, position.y))) {
-        cells.add(
-          Explosion(
-            id: explosionId,
-            position: Point(position.x - i, position.y),
-          ),
-        );
+      if (grid.hasHardBlock(Point(position.x - i, position.y))) {
+        break;
       }
+      // if (!grid.hasHardBlock(Point(position.x - i, position.y))) {
+      cells.add(
+        Explosion(id: explosionId, position: Point(position.x - i, position.y)),
+      );
+      // }
     }
 
     for (int i = 1; i <= range; i++) {
-      if (!grid.hasHardBlock(Point(position.x + i, position.y))) {
-        cells.add(
-          Explosion(
-            id: explosionId,
-            position: Point(position.x + i, position.y),
-          ),
-        );
+      if (grid.hasHardBlock(Point(position.x + i, position.y))) {
+        break;
       }
+      // if (!grid.hasHardBlock(Point(position.x + i, position.y))) {
+      cells.add(
+        Explosion(id: explosionId, position: Point(position.x + i, position.y)),
+      );
+      // }
     }
 
     for (final elem in cells) {

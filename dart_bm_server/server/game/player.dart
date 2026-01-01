@@ -50,13 +50,15 @@ class Player {
       if (velocity.x < 0) {
         var newPos = preciseAdd(
           position,
-          (velocity - Point(GameConstants.playerWidth, 0)),
+          velocity,
+          // (velocity - Point(GameConstants.playerWidth, 0)),
         );
         return newPos;
       } else {
         var newPos = preciseAdd(
           position,
-          (velocity - Point(0, GameConstants.playerWidth)),
+          velocity,
+          // (velocity - Point(0, GameConstants.playerWidth)),
         );
         return newPos;
       }
@@ -64,13 +66,15 @@ class Player {
       if (velocity.x > 0) {
         var newPos = preciseAdd(
           position,
-          (velocity + Point(GameConstants.playerWidth, 0)),
+          velocity,
+          // (velocity + Point(GameConstants.playerWidth * 2, 0)),
         );
         return newPos;
       } else {
         var newPos = preciseAdd(
           position,
-          (velocity + Point(0, GameConstants.playerWidth)),
+          velocity,
+          // (velocity + Point(0, GameConstants.playerWidth * 2)),
         );
         return newPos;
       }
