@@ -212,6 +212,14 @@ class GameState {
           player.updatePosition();
         }
 
+        // explosion collision
+        for (final explosion in explosions) {
+          if (explosion.position.x == player.position.x.round() &&
+              explosion.position.y == player.position.y.round()) {
+            player.isAlive = false;
+          }
+        }
+
         //  powerup collisions
         final playerCell = Point<int>(
           player.position.x.round(),
