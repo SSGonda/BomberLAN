@@ -1,6 +1,6 @@
 import 'dart:math';
 import 'dart:collection';
-import 'package:web_socket_channel/web_socket_channel.dart';
+// import 'package:web_socket_channel/web_socket_channel.dart';
 import 'player.dart';
 import 'bomb.dart';
 import 'powerup.dart';
@@ -197,18 +197,22 @@ class GameState {
 
     // update player bomb count
     final player = players[bomb.playerId];
-    if (player != null) {
-      player.bombExploded();
-    }
+    // if (player != null) {
+    player.bombExploded();
+    // }
   }
 
   void update(double deltaTime) {
     if (!isGameStarted || isGameOver) return;
+    var bombList = bombs.values.map((bomb) => bomb).toList();
 
     // update player positions
     for (final player in players) {
+      var newPos = player.calculateNewPos();
+
       if (player.isAlive) {
-        if (grid.isWalkable(player.calculateNewPos())) {
+        if (grid.isWalkable(newPos) &&
+            grid.checkBombWalk(player.position, newPos, bombList)) {
           player.updatePosition();
         }
 
