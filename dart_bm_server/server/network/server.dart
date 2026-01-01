@@ -84,9 +84,9 @@ class GameServer {
   void _handleMessage(WebSocketChannel webSocket, dynamic message) {
     try {
       final json = jsonDecode(message);
-      print(json);
+      // print(json);
       final gameMessage = GameMessage.fromJson(json);
-      print(gameMessage.tag);
+      // print(gameMessage.tag);
 
       switch (gameMessage.tag) {
         case 'ClientJoin':

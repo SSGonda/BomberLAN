@@ -103,9 +103,9 @@ class Bomb {
       // }
     }
 
-    for (final elem in cells) {
-      print("${elem.position}, ${elem.id}");
-    }
+    // for (final elem in cells) {
+    //   print("${elem.position}, ${elem.id}");
+    // }
 
     return cells;
   }
