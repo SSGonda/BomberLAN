@@ -112,12 +112,12 @@ class Bomb {
 
   Map<String, dynamic> toJson() {
     return {
-      'id': id,
+      // 'id': id,
       'x': position.x,
       'y': position.y,
-      'playerId': playerId,
-      'range': range,
-      'plantedTime': plantedTime.toIso8601String(),
+      'player': playerId,
+      'radius': range,
+      'timePlaced': plantedTime.toIso8601String(),
     };
   }
 }
