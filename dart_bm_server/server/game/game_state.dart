@@ -13,7 +13,7 @@ class GameState {
   final Grid grid;
   final List<Player> players;
   final Map<String, Bomb> bombs;
-  final Map<String, Powerup> powerups;
+  final List<Powerup> powerups;
   final List<Explosion> explosions;
   final Queue<String> playerQueue;
   bool isGameStarted;
@@ -26,7 +26,7 @@ class GameState {
     : grid = Grid(),
       players = [],
       bombs = {},
-      powerups = {},
+      powerups = [],
       explosions = [],
       playerQueue = Queue(),
       isGameStarted = false,
@@ -156,15 +156,10 @@ class GameState {
           final powerupTypes = ['bomb_up'];
           final powerupType =
               powerupTypes[Random().nextInt(powerupTypes.length)];
-          // final powerupId = 'powerup_${DateTime.now().millisecondsSinceEpoch}';
-          final powerupId =
-              'powerup_${Random().nextInt(GameConstants.gridRows * GameConstants.gridCols)}';
+          // final powerupId =
+          'powerup_${Random().nextInt(GameConstants.gridRows * GameConstants.gridCols)}';
 
-          powerups[powerupId] = Powerup(
-            id: powerupId,
-            position: cell.position,
-            type: powerupType,
-          );
+          powerups.add(Powerup(position: cell.position, type: powerupType));
         }
       }
 
@@ -234,17 +229,17 @@ class GameState {
           player.position.y.round(),
         );
 
-        final powerupsToRemove = <String>[];
-        for (final powerup in powerups.values) {
+        // final powerupsToRemove = <String>[];
+        for (final powerup in powerups) {
           if (powerup.position == playerCell) {
             player.addPowerup(powerup.type);
-            powerupsToRemove.add(powerup.id);
+            powerups.remove(powerup);
           }
         }
 
-        for (final powerupId in powerupsToRemove) {
-          powerups.remove(powerupId);
-        }
+        // for (final powerupId in powerupsToRemove) {
+        //   powerups.remove(powerupId);
+        // }
       }
     }
 
@@ -278,7 +273,7 @@ class GameState {
       'winner': winner,
       'players': players,
       'bombs': bombs.values.toList(),
-      'powerups': powerups.values.toList(),
+      'powerups': powerups.map((powerup) => powerup.toJson()).toList(),
       'explosions': explosions.map((explosion) => explosion.toJson()).toList(),
       'grid': grid.toJson(),
     };
