@@ -3,11 +3,10 @@ import 'dart:math';
 import '../game_client.dart';
 
 class BombComponent extends PositionComponent with HasGameRef<BombermanClient> {
-  final String id;
   final double tileSize;
   double _timer = 0;
 
-  BombComponent({required this.id, required this.tileSize});
+  BombComponent({required this.tileSize});
 
   @override
   Future<void> onLoad() async {
@@ -19,6 +18,7 @@ class BombComponent extends PositionComponent with HasGameRef<BombermanClient> {
       anchor: Anchor.center,
       position: Vector2(tileSize / 2, tileSize / 2),
     ));
+    priority = 5;
   }
 
   void updateState(Map<String, dynamic> data) {
