@@ -6,24 +6,24 @@ class Player {
   int id;
   Point<double> position;
   Point<double> velocity;
-  List<String> activePowerups;
+  // List<String> activePowerups;
   int maxBombs;
   int currentBombs;
   int bombRange;
   double speed;
   bool isAlive;
-  // DateTime lastTeleportTime;
+  // int lives;
 
   Player({required this.id, required Point<double> startingPosition})
     : position = startingPosition,
       velocity = Point(0, 0),
-      activePowerups = [],
+      // activePowerups = [],
       maxBombs = 1,
       currentBombs = 0,
       bombRange = 1,
       speed = GameConstants.baseSpeed,
       isAlive = true;
-  // lastTeleportTime = DateTime.now().subtract(const Duration(seconds: 2));
+  // lives = 1;
 
   void move(String direction) {
     switch (direction) {
@@ -48,30 +48,18 @@ class Player {
   Point<double> calculateNewPos() {
     if (velocity.x < 0 || velocity.y < 0) {
       if (velocity.x < 0) {
-        var newPos = preciseAdd(
-          position,
-          (velocity - Point(GameConstants.playerWidth, 0)),
-        );
+        var newPos = preciseAdd(position, velocity);
         return newPos;
       } else {
-        var newPos = preciseAdd(
-          position,
-          (velocity - Point(0, GameConstants.playerWidth)),
-        );
+        var newPos = preciseAdd(position, velocity);
         return newPos;
       }
     } else {
       if (velocity.x > 0) {
-        var newPos = preciseAdd(
-          position,
-          (velocity + Point(GameConstants.playerWidth, 0)),
-        );
+        var newPos = preciseAdd(position, velocity);
         return newPos;
       } else {
-        var newPos = preciseAdd(
-          position,
-          (velocity + Point(0, GameConstants.playerWidth)),
-        );
+        var newPos = preciseAdd(position, velocity);
         return newPos;
       }
     }
@@ -81,7 +69,6 @@ class Player {
     var newPos = preciseAdd(position, (velocity));
 
     position = newPos;
-    // print(position);
   }
 
   bool canPlantBomb() {
@@ -105,14 +92,11 @@ class Player {
         maxBombs++;
         break;
       case 'speed_up':
-        speed += GameConstants.speedUpIncrement;
+        // speed += GameConstants.speedUpIncrement;
+        speed = GameConstants.speedUpIncrement;
         break;
     }
-    activePowerups.add(powerupType);
-  }
-
-  void removePowerup(String powerupType) {
-    activePowerups.remove(powerupType);
+    // activePowerups.add(powerupType);
   }
 
   Map<String, dynamic> toJson() {
@@ -127,7 +111,7 @@ class Player {
       'bombRange': bombRange,
       'speed': speed,
       'isAlive': isAlive,
-      'activePowerups': activePowerups,
+      // 'activePowerups': activePowerups,
     };
   }
 }

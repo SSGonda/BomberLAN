@@ -9,20 +9,34 @@ class HudComponent extends PositionComponent {
   Future<void> onLoad() async {
     _timerText = TextComponent(
       text: 'Time: 00:00',
-      textRenderer: TextPaint(style: const TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.bold)),
-      position: Vector2(20, 10), 
+      textRenderer: TextPaint(
+        style: const TextStyle(
+          color: Colors.white, 
+          fontSize: 24, 
+          fontWeight: FontWeight.bold,
+          shadows: [Shadow(blurRadius: 4, color: Colors.black)]
+        )
+      ),
+      position: Vector2(20, 10),
     );
     
     _statusText = TextComponent(
       text: '',
-      textRenderer: TextPaint(style: const TextStyle(color: Colors.red, fontSize: 48, fontWeight: FontWeight.bold)),
+      textRenderer: TextPaint(
+        style: const TextStyle(
+          color: Colors.red, 
+          fontSize: 48, 
+          fontWeight: FontWeight.bold,
+          shadows: [Shadow(blurRadius: 10, color: Colors.black)]
+        )
+      ),
       anchor: Anchor.center,
     );
 
     add(_timerText);
     add(_statusText);
-    
-    _statusText.position = Vector2(300, 260); 
+    _statusText.position = Vector2(300, 260);
+    priority = 100;
   }
 
   void updateTime(int elapsed, int duration) {
@@ -43,6 +57,5 @@ class HudComponent extends PositionComponent {
     } else {
       _statusText.text = 'GAME OVER';
     }
-    priority = 100;
   }
 }

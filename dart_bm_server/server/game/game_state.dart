@@ -1,6 +1,6 @@
 import 'dart:math';
 import 'dart:collection';
-import 'package:web_socket_channel/web_socket_channel.dart';
+// import 'package:web_socket_channel/web_socket_channel.dart';
 import 'player.dart';
 import 'bomb.dart';
 import 'powerup.dart';
@@ -13,9 +13,8 @@ class GameState {
   final Grid grid;
   final List<Player> players;
   final Map<String, Bomb> bombs;
-  final Map<String, Powerup> powerups;
+  final List<Powerup> powerups;
   final List<Explosion> explosions;
-  // final Map<String, List<Point<int>>> explosions;
   final Queue<String> playerQueue;
   bool isGameStarted;
   bool isGameOver;
@@ -27,7 +26,7 @@ class GameState {
     : grid = Grid(),
       players = [],
       bombs = {},
-      powerups = {},
+      powerups = [],
       explosions = [],
       playerQueue = Queue(),
       isGameStarted = false,
@@ -35,7 +34,6 @@ class GameState {
       gameStartTime = DateTime.now(),
       connectedPlayers = 0,
       winner = null {
-    // Initialize player queue numbers
     for (int i = 1; i <= maxPlayers; i++) {
       playerQueue.add('P$i');
     }
@@ -59,7 +57,6 @@ class GameState {
 
     connectedPlayers++;
 
-    // Check if we can start the game
     if (connectedPlayers == maxPlayers) {
       startGame();
     }
@@ -69,21 +66,21 @@ class GameState {
 
   void removePlayer(int playerId) {
     final player = players[playerId];
-    if (player != null) {
-      // Remove player's bombs
-      final playerBombs = bombs.values
-          .where((bomb) => bomb.playerId == playerId)
-          .toList();
-      for (final bomb in playerBombs) {
-        bomb.cancelTimer();
-        bombs.remove(bomb.id);
-      }
-
-      // Add player number back to queue
-      playerQueue.add('P${player.id}');
-      players.removeAt(playerId);
-      connectedPlayers--;
+    // if (player != null) {
+    // Remove player's bombs
+    final playerBombs = bombs.values
+        .where((bomb) => bomb.playerId == playerId)
+        .toList();
+    for (final bomb in playerBombs) {
+      bomb.cancelTimer();
+      bombs.remove(bomb.id);
     }
+
+    // Add player number back to queue
+    playerQueue.add('P${player.id}');
+    players.removeAt(playerId);
+    connectedPlayers--;
+    // }
   }
 
   void startGame() {
@@ -97,11 +94,11 @@ class GameState {
 
     final bombPosition = Point<int>(
       //changed to round
-      player.position.x.floor(),
-      player.position.y.floor(),
+      player.position.x.round(),
+      player.position.y.round(),
     );
 
-    // Check if there's already a bomb at this position
+    // check if there's already a bomb at this position
     final existingBomb = bombs.values.firstWhere(
       (bomb) => bomb.position == bombPosition,
       orElse: () => Bomb(id: '', position: Point(0, 0), playerId: playerId),
@@ -134,7 +131,7 @@ class GameState {
 
     explosions.addAll(explosionCells);
 
-    // Handle chain reaction
+    // handle chain reaction
     final bombsToExplode = <Bomb>[];
     for (final cell in explosionCells) {
       // Check for other bombs
@@ -146,34 +143,40 @@ class GameState {
         }
       }
 
+      // remove blown up powerups
+      for (final powerup in powerups) {
+        if (powerup.position == cell.position) {
+          powerups.remove(powerup);
+        }
+      }
+
       // Destroy soft blocks
       if (grid.hasSoftBlock(cell.position)) {
         grid.destroySoftBlock(cell.position);
 
-        // Chance to spawn powerup
-        if (Random().nextDouble() < GameConstants.powerupSpawnChance) {
-          final powerupTypes = ['fire_up', 'bomb_up', 'speed_up'];
+        // if (Random().nextDouble() < GameConstants.powerupSpawnChance) {
+        if (true) {
+          // final powerupTypes = ['heart'];
+          // final powerupTypes = ['fireup', 'bombup', 'speedup'];
+          final powerupTypes = ['bombup'];
           final powerupType =
               powerupTypes[Random().nextInt(powerupTypes.length)];
-          final powerupId = 'powerup_${DateTime.now().millisecondsSinceEpoch}';
+          // final powerupId =
+          // 'powerup_${Random().nextInt(GameConstants.gridRows * GameConstants.gridCols)}';
 
-          powerups[powerupId] = Powerup(
-            id: powerupId,
-            position: cell.position,
-            type: powerupType,
-          );
+          powerups.add(Powerup(position: cell.position, type: powerupType));
         }
       }
 
-      // Check for player collisions
+      // check for player-bomb collisions
       for (final player in players) {
         if (player.isAlive) {
           final playerCell = Point<int>(
-            player.position.x.floor(),
-            player.position.y.floor(),
+            player.position.x.round(),
+            player.position.y.round(),
           );
           if (playerCell == cell.position) {
-            player.isAlive = false;
+            handlePlayerDeath(player);
           }
         }
       }
@@ -182,7 +185,7 @@ class GameState {
     // Remove the bomb
     bombs.remove(bombId);
 
-    // Handle chain reactions
+    // handle chain reactions
     for (final bombToExplode in bombsToExplode) {
       bombs.remove(bombToExplode.id);
       bombToExplode.cancelTimer();
@@ -196,40 +199,47 @@ class GameState {
 
     // update player bomb count
     final player = players[bomb.playerId];
-    if (player != null) {
-      player.bombExploded();
-    }
+    player.bombExploded();
+  }
+
+  void handlePlayerDeath(Player player) {
+    player.isAlive = false;
   }
 
   void update(double deltaTime) {
     if (!isGameStarted || isGameOver) return;
+    var bombList = bombs.values.map((bomb) => bomb).toList();
 
     // update player positions
     for (final player in players) {
+      var newPos = player.calculateNewPos();
+
       if (player.isAlive) {
-        // print(player.position);
-        if (grid.isWalkable(player.calculateNewPos())) {
-          // print('walkable');
+        if (grid.isWalkable(newPos) &&
+            grid.checkBombWalk(player.position, newPos, bombList)) {
           player.updatePosition();
         }
-        // print(player.position);
 
-        //  powerup collisions
-        final playerCell = Point<int>(
-          player.position.x.floor(),
-          player.position.y.floor(),
-        );
-
-        final powerupsToRemove = <String>[];
-        for (final powerup in powerups.values) {
-          if (powerup.position == playerCell) {
-            player.addPowerup(powerup.type);
-            powerupsToRemove.add(powerup.id);
+        // explosion collision
+        for (final explosion in explosions) {
+          if (explosion.position.x == player.position.x.round() &&
+              explosion.position.y == player.position.y.round()) {
+            handlePlayerDeath(player);
           }
         }
 
-        for (final powerupId in powerupsToRemove) {
-          powerups.remove(powerupId);
+        //  powerup acquiring
+        final playerCell = Point<int>(
+          player.position.x.round(),
+          player.position.y.round(),
+        );
+
+        // final powerupsToRemove = <String>[];
+        for (final powerup in powerups) {
+          if (powerup.position == playerCell) {
+            player.addPowerup(powerup.type);
+            powerups.remove(powerup);
+          }
         }
       }
     }
@@ -264,7 +274,7 @@ class GameState {
       'winner': winner,
       'players': players,
       'bombs': bombs.values.toList(),
-      'powerups': powerups.values.toList(),
+      'powerups': powerups.map((powerup) => powerup.toJson()).toList(),
       'explosions': explosions.map((explosion) => explosion.toJson()).toList(),
       'grid': grid.toJson(),
     };

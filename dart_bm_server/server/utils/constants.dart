@@ -13,7 +13,7 @@ class GameConstants {
   static const double playerWidth = 0.5;
 
   static const double baseSpeed = 0.1;
-  static const double speedUpIncrement = 0.5;
+  static const double speedUpIncrement = 0.2;
 
   static const int serverTickRate = 60;
 }

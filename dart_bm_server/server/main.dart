@@ -63,18 +63,6 @@ void main(List<String> arguments) async {
     );
 
     server.start();
-
-    ProcessSignal.sigint.watch().listen((_) {
-      print('\nShutting down server...');
-      server.stop();
-      exit(0);
-    });
-
-    ProcessSignal.sigterm.watch().listen((_) {
-      print('\nShutting down server...');
-      server.stop();
-      exit(0);
-    });
   } catch (e) {
     print('Error: $e');
     print('\nUsage:');

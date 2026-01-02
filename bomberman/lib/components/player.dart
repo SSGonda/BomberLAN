@@ -13,8 +13,9 @@ class PlayerComponent extends PositionComponent with HasGameRef<BombermanClient>
 
   @override
   Future<void> onLoad() async {
-    final spriteImage = gameRef.images.fromCache('player${id + 1}.png');
-    
+    final spriteName = 'player${id + 1}.png';
+    final spriteImage = gameRef.images.fromCache(spriteName);
+
     _sprite = SpriteComponent(
       sprite: Sprite(spriteImage),
       size: Vector2.all(tileSize * 0.8),
@@ -24,15 +25,23 @@ class PlayerComponent extends PositionComponent with HasGameRef<BombermanClient>
     
     _label = TextComponent(
       text: 'P${id + 1}',
-      textRenderer: TextPaint(style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold)),
+      textRenderer: TextPaint(
+        style: const TextStyle(
+          color: Colors.white, 
+          fontSize: 10, 
+          fontWeight: FontWeight.bold,
+          shadows: [Shadow(blurRadius: 2, color: Colors.black)],
+        ),
+      ),
       anchor: Anchor.center,
-      position: Vector2(tileSize / 2, -5), 
+      position: Vector2(tileSize / 2, -5),
     );
 
     add(_sprite);
     add(_label);
     
     size = Vector2.all(tileSize);
+    priority = 10; 
   }
 
   void updateState(Map<String, dynamic> data) {
@@ -44,10 +53,10 @@ class PlayerComponent extends PositionComponent with HasGameRef<BombermanClient>
     
     if (!isAlive) {
       _sprite.paint.color = Colors.grey;
-      _sprite.angle = 3.14159;
+      _sprite.angle = 3.14159; 
     } else {
-       _sprite.paint.color = const Color(0xFFFFFFFF);
-       _sprite.angle = 0;
+      _sprite.paint.color = const Color(0xFFFFFFFF);
+      _sprite.angle = 0;
     }
   }
 }

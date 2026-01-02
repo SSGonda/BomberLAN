@@ -58,7 +58,6 @@ class GameServer {
         // update game state
         gameState.update(deltaTime);
 
-        // sends state update message to clients if game has started, not yet over (should include going over time limit)
         if (gameState.isGameOver) {
           final updateMessage = StateUpdateMessage(gameState.toJson());
           _broadcastStatusUpdateMessage(updateMessage);
@@ -85,9 +84,9 @@ class GameServer {
   void _handleMessage(WebSocketChannel webSocket, dynamic message) {
     try {
       final json = jsonDecode(message);
-      print(json);
+      // print(json);
       final gameMessage = GameMessage.fromJson(json);
-      print(gameMessage.tag);
+      // print(gameMessage.tag);
 
       switch (gameMessage.tag) {
         case 'ClientJoin':
@@ -103,24 +102,9 @@ class GameServer {
             break;
           } else {
             final moveMessage = PlayerMoveMessage.fromJson(json);
-            print('goint to move message');
             _handlePlayerMove(moveMessage);
             break;
           }
-        // case 'player_move':
-        //   final moveMessage = gameMessage as PlayerMoveMessage;
-        //   _handlePlayerMove(moveMessage);
-        //   break;
-        //
-        // case 'plant_bomb':
-        //   final bombMessage = gameMessage as PlantBombMessage;
-        //   _handlePlantBomb(bombMessage);
-        //   break;
-        //
-        // case 'player_quit':
-        //   final quitMessage = gameMessage as PlayerQuitMessage;
-        //   _handlePlayerQuit(quitMessage);
-        //   break;
       }
     } catch (e) {
       print('Error handling message: $e');
@@ -172,7 +156,7 @@ class GameServer {
       }),
     );
 
-    // Notify all players about new player
+    // notify all players about new player
     _broadcastMessage({
       'tag': 'player_joined',
       'playerId': playerId,
@@ -188,10 +172,7 @@ class GameServer {
 
   void _handlePlayerMove(PlayerMoveMessage message) {
     final player = gameState.players[message.playerId];
-    if (player != null &&
-        player.isAlive &&
-        gameState.isGameStarted &&
-        !gameState.isGameOver) {
+    if (player.isAlive && gameState.isGameStarted && !gameState.isGameOver) {
       player.move(message.direction);
     }
   }
@@ -202,15 +183,16 @@ class GameServer {
     }
   }
 
-  void _handlePlayerQuit(PlayerQuitMessage message) {
-    gameState.removePlayer(message.playerId);
-    clientConnections.removeWhere(
-      (_, playerId) => playerId == message.playerId,
-    );
-
-    _broadcastMessage({'tag': 'player_left', 'playerId': message.playerId});
-  }
-
+  //
+  // void _handlePlayerQuit(PlayerQuitMessage message) {
+  //   gameState.removePlayer(message.playerId);
+  //   clientConnections.removeWhere(
+  //     (_, playerId) => playerId == message.playerId,
+  //   );
+  //
+  //   _broadcastMessage({'tag': 'player_left', 'playerId': message.playerId});
+  // }
+  //
   void _handleDisconnect(WebSocketChannel webSocket) {
     final playerId = int.parse(clientConnections[webSocket]!);
     if (playerId != null) {

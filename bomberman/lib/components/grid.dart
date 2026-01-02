@@ -16,7 +16,7 @@ class GridComponent extends PositionComponent with HasGameRef<BombermanClient> {
   Future<void> onLoad() async {
     hardWallSprite = Sprite(gameRef.images.fromCache('wall_hard.png'));
     softWallSprite = Sprite(gameRef.images.fromCache('wall_soft.png'));
-    groundSprite = Sprite(gameRef.images.fromCache('floor2.png'));
+    groundSprite = Sprite(gameRef.images.fromCache('floor.png'));
   }
 
   void updateGrid(List<List<dynamic>> newGrid) {
@@ -35,9 +35,9 @@ class GridComponent extends PositionComponent with HasGameRef<BombermanClient> {
         
         groundSprite.render(canvas, position: position, size: size);
 
-        if (cellType == 1) {
+        if (cellType == 1) { // hardBlock
           hardWallSprite.render(canvas, position: position, size: size);
-        } else if (cellType == 2) {
+        } else if (cellType == 2) { // softBlock
           softWallSprite.render(canvas, position: position, size: size);
         }
       }
