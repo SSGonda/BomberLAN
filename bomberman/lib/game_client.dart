@@ -41,7 +41,7 @@ class BombermanClient extends FlameGame with HasKeyboardHandlerComponents {
   Future<void> onLoad() async {
     await images.loadAll([
       'player1.png', 'player2.png', 'player3.png', 'player4.png',
-      'wall_hard.png', 'wall_soft.png', 'floor.png',
+      'wall_hard.png', 'wall_soft.png', 'floor2.png',
       'bomb.png', 'explosion.png',
       'powerup_fire.png', 'powerup_bomb.png', 'powerup_speed.png'
     ]);
@@ -90,7 +90,7 @@ class BombermanClient extends FlameGame with HasKeyboardHandlerComponents {
     switch (tag) {
       case 'ClientJoin':
         myPlayerId = json['playerId'];
-        print('Joined as Player: $myPlayerId');
+        print('Joined as Player: ${myPlayerId! + 1}');
         break;
       case 'StateUpdate':
         _updateGameState(json['gameState']);
@@ -99,10 +99,10 @@ class BombermanClient extends FlameGame with HasKeyboardHandlerComponents {
         print('Join Rejected: ${json['reason']}');
         break;
       case 'player_joined':
-        print('Player ${json['playerId']} joined');
+        print('Player ${json['playerId'] + 1} joined');
         break;
       case 'player_left':
-        print('Player ${json['playerId']} left');
+        print('Player ${json['playerId'] + 1} left');
         break;
     }
   }

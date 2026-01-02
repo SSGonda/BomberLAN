@@ -53,7 +53,12 @@ class HudComponent extends PositionComponent {
     if (winner == 'draw') {
       _statusText.text = 'DRAW!';
     } else if (winner != null) {
-      _statusText.text = '$winner WINS!';
+      String digits = winner.replaceAll(RegExp(r'[^0-9]'), '');
+      int serverId = int.tryParse(digits) ?? 0; // default to 0 if parsing fails
+
+      int displayId = serverId + 1; // add 1 to make it 1-indexed
+
+      _statusText.text = 'P$displayId WINS!';
     } else {
       _statusText.text = 'GAME OVER';
     }
