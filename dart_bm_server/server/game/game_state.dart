@@ -142,9 +142,8 @@ class GameState {
           bombsToExplode.add(otherBomb);
         }
       }
-
       // remove blown up powerups
-      for (final powerup in powerups) {
+      for (final powerup in List.of(powerups)) {
         if (powerup.position == cell.position) {
           powerups.remove(powerup);
         }
@@ -154,15 +153,13 @@ class GameState {
       if (grid.hasSoftBlock(cell.position)) {
         grid.destroySoftBlock(cell.position);
 
-        // if (Random().nextDouble() < GameConstants.powerupSpawnChance) {
-        if (true) {
+        // if (true) {
+        if (Random().nextDouble() < GameConstants.powerupSpawnChance) {
           // final powerupTypes = ['heart'];
-          // final powerupTypes = ['fireup', 'bombup', 'speedup'];
-          final powerupTypes = ['bombup'];
+          // final powerupTypes = ['bombup'];
+          final powerupTypes = ['fireup', 'bombup', 'speedup'];
           final powerupType =
               powerupTypes[Random().nextInt(powerupTypes.length)];
-          // final powerupId =
-          // 'powerup_${Random().nextInt(GameConstants.gridRows * GameConstants.gridCols)}';
 
           powerups.add(Powerup(position: cell.position, type: powerupType));
         }
@@ -192,7 +189,6 @@ class GameState {
       handleBombExplosion(bombToExplode.id);
     }
 
-    // Schedule explosion removal
     Future.delayed(const Duration(seconds: 1), () {
       explosions.removeWhere((explosion) => explosion.id == explosionId);
     });
@@ -235,10 +231,11 @@ class GameState {
         );
 
         // final powerupsToRemove = <String>[];
-        for (final powerup in powerups) {
+        for (final powerup in List.of(powerups)) {
           if (powerup.position == playerCell) {
             player.addPowerup(powerup.type);
             powerups.remove(powerup);
+            // powerup.toRemove = true;
           }
         }
       }

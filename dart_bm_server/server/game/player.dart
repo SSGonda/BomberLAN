@@ -85,13 +85,13 @@ class Player {
 
   void addPowerup(String powerupType) {
     switch (powerupType) {
-      case 'fire_up':
+      case 'fireup':
         bombRange++;
         break;
-      case 'bomb_up':
+      case 'bombup':
         maxBombs++;
         break;
-      case 'speed_up':
+      case 'speedup':
         // speed += GameConstants.speedUpIncrement;
         speed = GameConstants.speedUpIncrement;
         break;
