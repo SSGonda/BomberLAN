@@ -34,7 +34,6 @@ class Grid {
       }
     }
 
-    // Add soft blocks (Phase 4: 40% chance per free cell)
     for (int i = 1; i < rows - 1; i++) {
       for (int j = 1; j < cols - 1; j++) {
         if (cells[i][j] == CellType.empty &&
