@@ -7,6 +7,6 @@ class Powerup {
   Powerup({required this.position, required this.type});
 
   Map<String, dynamic> toJson() {
-    return {'x': position.x, 'y': position.y, 'type': type};
+    return {'x': position.x, 'y': position.y, 'name': type};
   }
 }

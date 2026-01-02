@@ -92,7 +92,8 @@ class Player {
         maxBombs++;
         break;
       case 'speed_up':
-        speed += GameConstants.speedUpIncrement;
+        // speed += GameConstants.speedUpIncrement;
+        speed = GameConstants.speedUpIncrement;
         break;
     }
     // activePowerups.add(powerupType);

@@ -34,7 +34,6 @@ class GameState {
       gameStartTime = DateTime.now(),
       connectedPlayers = 0,
       winner = null {
-    // Initialize player queue numbers
     for (int i = 1; i <= maxPlayers; i++) {
       playerQueue.add('P$i');
     }
@@ -58,7 +57,6 @@ class GameState {
 
     connectedPlayers++;
 
-    // Check if we can start the game
     if (connectedPlayers == maxPlayers) {
       startGame();
     }
@@ -68,21 +66,21 @@ class GameState {
 
   void removePlayer(int playerId) {
     final player = players[playerId];
-    if (player != null) {
-      // Remove player's bombs
-      final playerBombs = bombs.values
-          .where((bomb) => bomb.playerId == playerId)
-          .toList();
-      for (final bomb in playerBombs) {
-        bomb.cancelTimer();
-        bombs.remove(bomb.id);
-      }
-
-      // Add player number back to queue
-      playerQueue.add('P${player.id}');
-      players.removeAt(playerId);
-      connectedPlayers--;
+    // if (player != null) {
+    // Remove player's bombs
+    final playerBombs = bombs.values
+        .where((bomb) => bomb.playerId == playerId)
+        .toList();
+    for (final bomb in playerBombs) {
+      bomb.cancelTimer();
+      bombs.remove(bomb.id);
     }
+
+    // Add player number back to queue
+    playerQueue.add('P${player.id}');
+    players.removeAt(playerId);
+    connectedPlayers--;
+    // }
   }
 
   void startGame() {
@@ -145,6 +143,13 @@ class GameState {
         }
       }
 
+      // remove blown up powerups
+      for (final powerup in powerups) {
+        if (powerup.position == cell.position) {
+          powerups.remove(powerup);
+        }
+      }
+
       // Destroy soft blocks
       if (grid.hasSoftBlock(cell.position)) {
         grid.destroySoftBlock(cell.position);
@@ -152,12 +157,12 @@ class GameState {
         // if (Random().nextDouble() < GameConstants.powerupSpawnChance) {
         if (true) {
           // final powerupTypes = ['heart'];
-          // final powerupTypes = ['fire_up', 'bomb_up', 'speed_up'];
-          final powerupTypes = ['bomb_up'];
+          // final powerupTypes = ['fireup', 'bombup', 'speedup'];
+          final powerupTypes = ['bombup'];
           final powerupType =
               powerupTypes[Random().nextInt(powerupTypes.length)];
           // final powerupId =
-          'powerup_${Random().nextInt(GameConstants.gridRows * GameConstants.gridCols)}';
+          // 'powerup_${Random().nextInt(GameConstants.gridRows * GameConstants.gridCols)}';
 
           powerups.add(Powerup(position: cell.position, type: powerupType));
         }
@@ -236,10 +241,6 @@ class GameState {
             powerups.remove(powerup);
           }
         }
-
-        // for (final powerupId in powerupsToRemove) {
-        //   powerups.remove(powerupId);
-        // }
       }
     }
 
