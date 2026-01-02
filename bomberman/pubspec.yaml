@@ -35,6 +35,7 @@ dependencies:
   # Use with the CupertinoIcons class for iOS style icons.
   cupertino_icons: ^1.0.8
   flame: ^1.34.0
+  flame_audio: ^2.1.0
   web_socket_channel: ^2.4.0
 
 dev_dependencies:
@@ -55,6 +56,7 @@ dev_dependencies:
 flutter:
   assets:
     - assets/images/
+    - assets/audio/
   # The following line ensures that the Material Icons font is
   # included with your application, so that you can use the icons in
   # the material Icons class.
