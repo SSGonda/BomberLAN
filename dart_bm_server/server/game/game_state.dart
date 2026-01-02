@@ -100,7 +100,7 @@ class GameState {
       player.position.y.round(),
     );
 
-    // Check if there's already a bomb at this position
+    // check if there's already a bomb at this position
     final existingBomb = bombs.values.firstWhere(
       (bomb) => bomb.position == bombPosition,
       orElse: () => Bomb(id: '', position: Point(0, 0), playerId: playerId),
@@ -149,13 +149,16 @@ class GameState {
       if (grid.hasSoftBlock(cell.position)) {
         grid.destroySoftBlock(cell.position);
 
-        // if (true) {
-        if (Random().nextDouble() < GameConstants.powerupSpawnChance) {
-          // final powerupTypes = ['fire_up'];
-          final powerupTypes = ['fire_up', 'bomb_up', 'speed_up'];
+        // if (Random().nextDouble() < GameConstants.powerupSpawnChance) {
+        if (true) {
+          // final powerupTypes = ['heart'];
+          // final powerupTypes = ['fire_up', 'bomb_up', 'speed_up'];
+          final powerupTypes = ['bomb_up'];
           final powerupType =
               powerupTypes[Random().nextInt(powerupTypes.length)];
-          final powerupId = 'powerup_${DateTime.now().millisecondsSinceEpoch}';
+          // final powerupId = 'powerup_${DateTime.now().millisecondsSinceEpoch}';
+          final powerupId =
+              'powerup_${Random().nextInt(GameConstants.gridRows * GameConstants.gridCols)}';
 
           powerups[powerupId] = Powerup(
             id: powerupId,
@@ -165,7 +168,7 @@ class GameState {
         }
       }
 
-      // Check for player collisions
+      // check for player-bomb collisions
       for (final player in players) {
         if (player.isAlive) {
           final playerCell = Point<int>(

@@ -6,23 +6,24 @@ class Player {
   int id;
   Point<double> position;
   Point<double> velocity;
-  List<String> activePowerups;
+  // List<String> activePowerups;
   int maxBombs;
   int currentBombs;
   int bombRange;
   double speed;
   bool isAlive;
-  // DateTime lastTeleportTime;
+  // int lives;
 
   Player({required this.id, required Point<double> startingPosition})
     : position = startingPosition,
       velocity = Point(0, 0),
-      activePowerups = [],
+      // activePowerups = [],
       maxBombs = 1,
       currentBombs = 0,
       bombRange = 1,
       speed = GameConstants.baseSpeed,
       isAlive = true;
+  // lives = 1;
 
   void move(String direction) {
     switch (direction) {
@@ -94,11 +95,7 @@ class Player {
         speed += GameConstants.speedUpIncrement;
         break;
     }
-    activePowerups.add(powerupType);
-  }
-
-  void removePowerup(String powerupType) {
-    activePowerups.remove(powerupType);
+    // activePowerups.add(powerupType);
   }
 
   Map<String, dynamic> toJson() {
@@ -113,7 +110,7 @@ class Player {
       'bombRange': bombRange,
       'speed': speed,
       'isAlive': isAlive,
-      'activePowerups': activePowerups,
+      // 'activePowerups': activePowerups,
     };
   }
 }
