@@ -153,11 +153,11 @@ class GameState {
       if (grid.hasSoftBlock(cell.position)) {
         grid.destroySoftBlock(cell.position);
 
-        // if (true) {
-        if (Random().nextDouble() < GameConstants.powerupSpawnChance) {
+        if (true) {
+          // if (Random().nextDouble() < GameConstants.powerupSpawnChance) {
           // final powerupTypes = ['heart'];
-          // final powerupTypes = ['bombup'];
-          final powerupTypes = ['fireup', 'bombup', 'speedup'];
+          final powerupTypes = ['bombup'];
+          // final powerupTypes = ['fireup', 'bombup', 'speedup'];
           final powerupType =
               powerupTypes[Random().nextInt(powerupTypes.length)];
 
@@ -184,7 +184,6 @@ class GameState {
 
     // handle chain reactions
     for (final bombToExplode in bombsToExplode) {
-      bombs.remove(bombToExplode.id);
       bombToExplode.cancelTimer();
       handleBombExplosion(bombToExplode.id);
     }
