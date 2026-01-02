@@ -15,7 +15,6 @@ class GameState {
   final Map<String, Bomb> bombs;
   final Map<String, Powerup> powerups;
   final List<Explosion> explosions;
-  // final Map<String, List<Point<int>>> explosions;
   final Queue<String> playerQueue;
   bool isGameStarted;
   bool isGameOver;
@@ -134,7 +133,7 @@ class GameState {
 
     explosions.addAll(explosionCells);
 
-    // Handle chain reaction
+    // handle chain reaction
     final bombsToExplode = <Bomb>[];
     for (final cell in explosionCells) {
       // Check for other bombs
@@ -174,7 +173,7 @@ class GameState {
             player.position.y.round(),
           );
           if (playerCell == cell.position) {
-            player.isAlive = false;
+            handlePlayerDeath(player);
           }
         }
       }
@@ -183,7 +182,7 @@ class GameState {
     // Remove the bomb
     bombs.remove(bombId);
 
-    // Handle chain reactions
+    // handle chain reactions
     for (final bombToExplode in bombsToExplode) {
       bombs.remove(bombToExplode.id);
       bombToExplode.cancelTimer();
@@ -197,9 +196,11 @@ class GameState {
 
     // update player bomb count
     final player = players[bomb.playerId];
-    // if (player != null) {
     player.bombExploded();
-    // }
+  }
+
+  void handlePlayerDeath(Player player) {
+    player.isAlive = false;
   }
 
   void update(double deltaTime) {
@@ -220,11 +221,11 @@ class GameState {
         for (final explosion in explosions) {
           if (explosion.position.x == player.position.x.round() &&
               explosion.position.y == player.position.y.round()) {
-            player.isAlive = false;
+            handlePlayerDeath(player);
           }
         }
 
-        //  powerup collisions
+        //  powerup acquiring
         final playerCell = Point<int>(
           player.position.x.round(),
           player.position.y.round(),

@@ -23,7 +23,6 @@ class Player {
       bombRange = 1,
       speed = GameConstants.baseSpeed,
       isAlive = true;
-  // lastTeleportTime = DateTime.now().subtract(const Duration(seconds: 2));
 
   void move(String direction) {
     switch (direction) {
@@ -48,34 +47,18 @@ class Player {
   Point<double> calculateNewPos() {
     if (velocity.x < 0 || velocity.y < 0) {
       if (velocity.x < 0) {
-        var newPos = preciseAdd(
-          position,
-          velocity,
-          // (velocity - Point(GameConstants.playerWidth, 0)),
-        );
+        var newPos = preciseAdd(position, velocity);
         return newPos;
       } else {
-        var newPos = preciseAdd(
-          position,
-          velocity,
-          // (velocity - Point(0, GameConstants.playerWidth)),
-        );
+        var newPos = preciseAdd(position, velocity);
         return newPos;
       }
     } else {
       if (velocity.x > 0) {
-        var newPos = preciseAdd(
-          position,
-          velocity,
-          // (velocity + Point(GameConstants.playerWidth * 2, 0)),
-        );
+        var newPos = preciseAdd(position, velocity);
         return newPos;
       } else {
-        var newPos = preciseAdd(
-          position,
-          velocity,
-          // (velocity + Point(0, GameConstants.playerWidth * 2)),
-        );
+        var newPos = preciseAdd(position, velocity);
         return newPos;
       }
     }
@@ -85,7 +68,6 @@ class Player {
     var newPos = preciseAdd(position, (velocity));
 
     position = newPos;
-    // print(position);
   }
 
   bool canPlantBomb() {
