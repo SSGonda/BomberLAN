@@ -17,8 +17,6 @@ abstract class GameMessage {
         return PlayerMoveMessage.fromJson(json);
       case 'plant_bomb':
         return PlantBombMessage.fromJson(json);
-      // case 'player_quit':
-      //   return PlayerQuitMessage.fromJson(json);
       default:
         throw ArgumentError('Unknown message tag: $tag');
     }
@@ -71,7 +69,6 @@ class PlayerMoveMessage extends GameMessage {
   }
 
   factory PlayerMoveMessage.fromJson(Map<String, dynamic> json) {
-    // print('went here');
     return PlayerMoveMessage(
       playerId: json['playerId'] as int,
       direction: json['action'] as String,

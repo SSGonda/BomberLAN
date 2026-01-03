@@ -63,56 +63,43 @@ class Bomb {
       if (grid.hasHardBlock(Point(position.x, position.y - i))) {
         break;
       }
-      // if (!grid.hasHardBlock(Point(position.x, position.y - i))) {
       cells.add(
         Explosion(id: explosionId, position: Point(position.x, position.y - i)),
       );
-      // }
     }
 
     for (int i = 1; i <= range; i++) {
       if (grid.hasHardBlock(Point(position.x, position.y + i))) {
         break;
       }
-      // if (!grid.hasHardBlock(Point(position.x, position.y + i))) {
       cells.add(
         Explosion(id: explosionId, position: Point(position.x, position.y + i)),
       );
-      // }
     }
 
     for (int i = 1; i <= range; i++) {
       if (grid.hasHardBlock(Point(position.x - i, position.y))) {
         break;
       }
-      // if (!grid.hasHardBlock(Point(position.x - i, position.y))) {
       cells.add(
         Explosion(id: explosionId, position: Point(position.x - i, position.y)),
       );
-      // }
     }
 
     for (int i = 1; i <= range; i++) {
       if (grid.hasHardBlock(Point(position.x + i, position.y))) {
         break;
       }
-      // if (!grid.hasHardBlock(Point(position.x + i, position.y))) {
       cells.add(
         Explosion(id: explosionId, position: Point(position.x + i, position.y)),
       );
-      // }
     }
-
-    // for (final elem in cells) {
-    //   print("${elem.position}, ${elem.id}");
-    // }
 
     return cells;
   }
 
   Map<String, dynamic> toJson() {
     return {
-      // 'id': id,
       'x': position.x,
       'y': position.y,
       'player': playerId,

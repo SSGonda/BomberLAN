@@ -2,7 +2,7 @@ import 'dart:math';
 
 class Powerup {
   Point<int> position;
-  String type; // 'fire_up', 'bomb_up', 'speed_up'
+  String type;
   bool toRemove;
 
   Powerup({required this.position, required this.type}) : toRemove = false;

@@ -28,7 +28,6 @@ class Grid {
         if (i == 0 || i == rows - 1 || j == 0 || j == cols - 1) {
           cells[i][j] = CellType.hardBlock;
         } else if (i % 2 == 0 && j % 2 == 0) {
-          // Place hard blocks in checkerboard pattern (not on border)
           cells[i][j] = CellType.hardBlock;
         }
       }

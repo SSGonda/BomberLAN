@@ -84,9 +84,7 @@ class GameServer {
   void _handleMessage(WebSocketChannel webSocket, dynamic message) {
     try {
       final json = jsonDecode(message);
-      // print(json);
       final gameMessage = GameMessage.fromJson(json);
-      // print(gameMessage.tag);
 
       switch (gameMessage.tag) {
         case 'ClientJoin':
@@ -183,16 +181,6 @@ class GameServer {
     }
   }
 
-  //
-  // void _handlePlayerQuit(PlayerQuitMessage message) {
-  //   gameState.removePlayer(message.playerId);
-  //   clientConnections.removeWhere(
-  //     (_, playerId) => playerId == message.playerId,
-  //   );
-  //
-  //   _broadcastMessage({'tag': 'player_left', 'playerId': message.playerId});
-  // }
-  //
   void _handleDisconnect(WebSocketChannel webSocket) {
     final playerId = int.parse(clientConnections[webSocket]!);
     if (playerId != null) {

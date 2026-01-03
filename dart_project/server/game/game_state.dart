@@ -1,6 +1,5 @@
 import 'dart:math';
 import 'dart:collection';
-// import 'package:web_socket_channel/web_socket_channel.dart';
 import 'player.dart';
 import 'bomb.dart';
 import 'powerup.dart';
@@ -66,8 +65,6 @@ class GameState {
 
   void removePlayer(int playerId) {
     final player = players[playerId];
-    // if (player != null) {
-    // Remove player's bombs
     final playerBombs = bombs.values
         .where((bomb) => bomb.playerId == playerId)
         .toList();
@@ -80,7 +77,6 @@ class GameState {
     playerQueue.add('P${player.id}');
     players.removeAt(playerId);
     connectedPlayers--;
-    // }
   }
 
   void startGame() {
@@ -153,11 +149,10 @@ class GameState {
       if (grid.hasSoftBlock(cell.position)) {
         grid.destroySoftBlock(cell.position);
 
-        if (true) {
-          // if (Random().nextDouble() < GameConstants.powerupSpawnChance) {
-          // final powerupTypes = ['heart'];
-          final powerupTypes = ['bombup'];
-          // final powerupTypes = ['fireup', 'bombup', 'speedup'];
+        // if (true) {
+        if (Random().nextDouble() < GameConstants.powerupSpawnChance) {
+          // final powerupTypes = ['bombup'];
+          final powerupTypes = ['fireup', 'bombup', 'speedup'];
           final powerupType =
               powerupTypes[Random().nextInt(powerupTypes.length)];
 
