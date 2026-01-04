@@ -707,18 +707,18 @@ instance JSaddle.ToJSVal CanvasState where
 -----------------------------------------------------------------------------
 initCanvas :: M.DOMRef -> Canvas.Canvas CanvasState 
 initCanvas _ = JSaddle.liftJSM $ do
-  floor <- M.newImage "../images/floor.png"
-  wallSoft <- M.newImage "../images/wall_soft.png"
-  wallHard <- M.newImage "../images/wall_hard.png"
-  bomb <- M.newImage "../images/bomb.png"
-  explosion <- M.newImage "../images/explosion.png"
-  player1 <- M.newImage "../images/player1.png"
-  player2 <- M.newImage "../images/player2.png"
-  player3 <- M.newImage "../images/player3.png"
-  player4 <- M.newImage "../images/player4.png"
-  powerUpBomb <- M.newImage "../images/powerup_bomb.png"
-  powerUpFire <- M.newImage "../images/powerup_fire.png"
-  powerUpSpeed <- M.newImage "../images/powerup_speed.png"
+  floor <- M.newImage "../assets/images/floor.png"
+  wallSoft <- M.newImage "../assets/images/wall_soft.png"
+  wallHard <- M.newImage "../assets/images/wall_hard.png"
+  bomb <- M.newImage "../assets/images/bomb.png"
+  explosion <- M.newImage "../assets/images/explosion.png"
+  player1 <- M.newImage "../assets/images/player1.png"
+  player2 <- M.newImage "../assets/images/player2.png"
+  player3 <- M.newImage "../assets/images/player3.png"
+  player4 <- M.newImage "../assets/images/player4.png"
+  powerUpBomb <- M.newImage "../assets/images/powerup_bomb.png"
+  powerUpFire <- M.newImage "../assets/images/powerup_fire.png"
+  powerUpSpeed <- M.newImage "../assets/images/powerup_speed.png"
   pure $ CanvasState {
     floorImg = floor,
     wallSoftImg = wallSoft,
