@@ -39,6 +39,11 @@ import qualified Data.ByteString.Lazy as BL
 import Data.Ix (Ix(range))
 import Data.Functor ( (<&>) )
 
+import qualified Miso.Canvas as Canvas
+import qualified Language.Javascript.JSaddle as JSaddle
+import Miso.Canvas (TextAlignType (TextAlignCenter))
+
+
 -- Check whether to run a server or client
 
 mainNothing :: IO ()
@@ -668,8 +673,66 @@ data Model = Model
   , _currentGameState :: Maybe GameState
   , _lastArrowDir :: (Int, Int)
   , _status :: Maybe MisoString
+  , _heldKeys :: IntSet
   , _boxId :: Int
   } deriving Eq
+-----------------------------------------------------------------------------
+data CanvasState = CanvasState
+  { floorImg :: M.Image
+  , wallSoftImg :: M.Image
+  , wallHardImg :: M.Image
+  , bombImg :: M.Image
+  , explosionImg :: M.Image
+  , player1Img :: M.Image
+  , player2Img :: M.Image
+  , player3Img :: M.Image
+  , player4Img :: M.Image
+  , powerUpBombImg :: M.Image
+  , powerUpFireImg :: M.Image
+  , powerUpSpeedImg :: M.Image
+  }
+
+instance JSaddle.FromJSVal CanvasState where
+  fromJSVal v = do
+    ((floor, wallS, wallH, bomb, explosion, p1, p2), 
+     (p3, p4, pupBomb, pupFire, pupSpeed)) <- JSaddle.fromJSValUnchecked v
+    pure $ Just $ CanvasState floor wallS wallH bomb explosion p1 p2 p3 p4 pupBomb pupFire pupSpeed
+
+instance JSaddle.ToJSVal CanvasState where
+  toJSVal st = JSaddle.toJSVal 
+    ((st.floorImg, st.wallSoftImg, st.wallHardImg, st.bombImg, st.explosionImg, 
+      st.player1Img, st.player2Img),
+     (st.player3Img, st.player4Img, st.powerUpBombImg, st.powerUpFireImg, 
+      st.powerUpSpeedImg))
+-----------------------------------------------------------------------------
+initCanvas :: M.DOMRef -> Canvas.Canvas CanvasState 
+initCanvas _ = JSaddle.liftJSM $ do
+  floor <- M.newImage "../images/floor.png"
+  wallSoft <- M.newImage "../images/wall_soft.png"
+  wallHard <- M.newImage "../images/wall_hard.png"
+  bomb <- M.newImage "../images/bomb.png"
+  explosion <- M.newImage "../images/explosion.png"
+  player1 <- M.newImage "../images/player1.png"
+  player2 <- M.newImage "../images/player2.png"
+  player3 <- M.newImage "../images/player3.png"
+  player4 <- M.newImage "../images/player4.png"
+  powerUpBomb <- M.newImage "../images/powerup_bomb.png"
+  powerUpFire <- M.newImage "../images/powerup_fire.png"
+  powerUpSpeed <- M.newImage "../images/powerup_speed.png"
+  pure $ CanvasState {
+    floorImg = floor,
+    wallSoftImg = wallSoft,
+    wallHardImg = wallHard,
+    bombImg = bomb,
+    explosionImg = explosion,
+    player1Img = player1,
+    player2Img = player2,
+    player3Img = player3,
+    player4Img = player4,
+    powerUpBombImg = powerUpBomb,
+    powerUpFireImg = powerUpFire,
+    powerUpSpeedImg = powerUpSpeed
+  }
 -----------------------------------------------------------------------------
 msg :: Lens Model MisoString
 msg = lens _msg $ \r x -> r { _msg = x }
@@ -692,8 +755,11 @@ currentGameState = lens _currentGameState $ \r x -> r { _currentGameState = x }
 status :: Lens Model (Maybe MisoString)
 status = lens _status $ \r x -> r { _status = x }
 -----------------------------------------------------------------------------
+heldKeys :: Lens Model IntSet
+heldKeys = lens _heldKeys $ \r x -> r { _heldKeys = x }
+-----------------------------------------------------------------------------
 emptyModel :: Int -> Model
-emptyModel = Model mempty emptyWebSocket False [] Nothing (0, 0) Nothing
+emptyModel = Model mempty emptyWebSocket False [] Nothing (0, 0) Nothing mempty
 -----------------------------------------------------------------------------
 websocketComponent :: Int -> M.Component parent Model Action
 websocketComponent box =
@@ -734,7 +800,14 @@ websocketComponent box =
                   Just gs -> do 
                     M.issue (Update (Just gs))
                     status .= Nothing
-                  Nothing -> pure ()            
+                  Nothing -> pure ()   
+              "ClientJoin" -> do
+                case resp.message of
+                  Just cid -> do
+                    let clientId = read cid :: Int
+                    boxId .= clientId
+                    status .= Just ("Connected as Player " <> MS.ms (show (clientId + 1)))
+                  Nothing -> pure ()       
               _ -> pure ()
           Nothing -> status .= Just "Could not parse message"
       Update gs ->
@@ -745,15 +818,22 @@ websocketComponent box =
       KeyboardEvent keys -> do
         isConnected <- use connected
         clientNumber <- use boxId
-        let safeHead [] = -1
-            safeHead (x':_) = x'
-            action = case safeHead (IntSet.elems keys) of
+        oldKeys <- use heldKeys
+        let dirs = IntSet.intersection keys (IntSet.fromList [37,38,39,40])
+            safeHead [] = -1
+            safeHead (x':_) = x' 
+            newKeys = IntSet.difference dirs (IntSet.intersection oldKeys (IntSet.fromList [37,38,39,40]))
+            activeKey = if not (IntSet.null newKeys)
+                        then safeHead (IntSet.elems newKeys)
+                        else safeHead (IntSet.elems dirs)
+            action = case activeKey of
                       37 -> "left"
                       38 -> "up"
                       39 -> "right"
                       40 -> "down"
                       _ -> "stop"
         prevDir <- use lastArrowDir
+        heldKeys .= keys
         let newDir = case action of
                       "left"  -> (0, -1)
                       "right" -> (0, 1)
@@ -761,8 +841,11 @@ websocketComponent box =
                       "down"  -> (1, 0)
                       _       -> (0, 0)
         when (isConnected && newDir /= prevDir) $ do
+          lastArrowDir .= newDir
           M.issue (SendMessage (jsonRequest action clientNumber))
-        when (isConnected && IntSet.member 32 keys) $ do
+        let wasBombPressed = IntSet.member 32 oldKeys
+            isBombPressed = IntSet.member 32 keys
+        when (isConnected && isBombPressed && not wasBombPressed) $ do
           M.issue (SendMessage (jsonRequest "bomb" clientNumber))
         unless isConnected $
           M.io_ $ M.consoleLog "Not connected, ignoring input"
@@ -840,227 +923,105 @@ viewModel m =
         ]
         [ M.text msg ]
       Nothing -> H.div_ [] []
-    , H.div_
-      [ P.id_ "gameGrid" ] $
-      if (m ^. currentGameState) == Nothing
-      then
-        pure $ H.div_
-          [ P.class_ "empty-state"
-          ]
-          [ "No messages yet"
-          ]
-      else
-      [ 
-        renderGameGrid (m ^. currentGameState)
-      ]
-    ]
------------------------------------------------------------------------------
--- Render both the grid and players
-renderGameGrid :: Maybe GameState -> M.View Model Action
-renderGameGrid Nothing = H.div_ [] [M.text "No game state available"]
-renderGameGrid (Just gs) =
-  H.div_ 
-  [ P.id_ "game-container"
-  , CSS.style_ [ CSS.position "relative"
-               , CSS.width "600px"
-               , CSS.height "520px"
-               ]
-  ]
-  [ -- Grid layer
-    if gs.isGameOver then
-      -- Game Over Screen
-      H.div_
-      [ P.id_ "game-over"
-      , CSS.style_ [CSS.textAlign "center"]
-      ]
-      [ H.h1_ [] [ M.text "Game Over!" ]
-      , case gs.winner of
-          Just wid -> H.h2_ [] [ M.text (MS.ms ("Winner: Player " ++ show (wid + 1))) ]
-          Nothing -> H.h2_ [] [ M.text "It's a Draw!" ]
-      ]
-    else
-      -- Timer
-      H.div_
-      [ P.id_ "timer"
-      , CSS.style_ [ CSS.position "relative"
-                   , CSS.marginBottom "8px"
-                   , CSS.marginTop "40px"
-                   , CSS.textAlign "center" 
-                   ]
-      ]
-      [ H.span_ [] [ M.text (MS.ms ("Time Left: " ++ show (gs.timeRemaining `div` 60) ++ ":" ++ show (gs.timeRemaining `mod` 60))) ] ]
-
-  , H.div_ 
-    [ P.id_ "grid"
-    , CSS.style_ [ CSS.display "grid"
-                 , CSS.gridTemplateColumns "repeat(15, 40px)"
-                 , CSS.gridTemplateRows "repeat(13, 40px)"
-                 , CSS.position "absolute"
-                 , CSS.top "80px"
-                 , CSS.left "0"
-                 , CSS.zIndex "0"
-                 ]
-    ]
-    (concatMap renderRow gs.grid)
-    
-    -- Players layer (on top of grid)
-  , H.div_
-    [ CSS.style_ [ CSS.position "absolute"
-                 , CSS.top "80px"
-                 , CSS.left "0"
-                 , CSS.zIndex "1"
-                 , CSS.width "100%"
-                 , CSS.height "100%"
-                 ]
-    ]
-    (map renderPlayer (filter (\player -> player.isAlive) gs.players))
-
-    -- Bombs layer (on top of players)
-  , H.div_
-    [ CSS.style_ [ CSS.position "absolute"
-                 , CSS.top "80px"
-                 , CSS.left "0"
-                 , CSS.zIndex "2"
-                 , CSS.width "100%"
-                 , CSS.height "100%"
-                 ]
-    ]
-    (map renderBomb gs.bombs)
-
-    -- Powerups layer (on top of bombs)
-  , H.div_
-    [ CSS.style_ [ CSS.position "absolute"
-                 , CSS.top "80px"
-                 , CSS.left "0"
-                 , CSS.zIndex "2"
-                 , CSS.width "100%"
-                 , CSS.height "100%"
-                 ]
-    ]
-    (map renderPowerup gs.powerups)
-  
-    -- Explosions layer (on top of powerups)
-  , H.div_
-    [ CSS.style_ [ CSS.position "absolute"
-                 , CSS.top "80px"
-                 , CSS.left "0"
-                 , CSS.zIndex "3"
-                 , CSS.width "100%"
-                 , CSS.height "100%"
-                 ]
-    ]
-    (map renderExplosion gs.explosions)
-  ]
-
--- Render a single row of grid cells
-renderRow :: [Int] -> [M.View Model Action]
-renderRow = map (\ cell -> H.img_ [P.src_ (getSrc cell), CSS.style_ [CSS.width "40px", CSS.height "40px"]])
-
--- Render a single player
-renderPlayer :: Player -> M.View Model Action
-renderPlayer player =
-  let yPos = player.x  * 40.0  -- Convert from grid coordinates (1-based) to pixels
-      xPos = player.y * 40.0
-      getPlayerColor :: Int -> CSS.Color
-      getPlayerColor pid
-        | pid == 0 = Col.blue
-        | pid == 1 = Col.red
-        | pid == 2 = Col.green
-        | pid == 3 = Col.yellow
-        | otherwise = Col.black
-  in
-    H.div_ 
-      []
-      [ H.h3_ 
-        [ CSS.style_ [ CSS.position "absolute"
-                     , CSS.textAlign "center"
-                     , CSS.left (MS.ms (show (xPos + 3) ++ "px"))
-                     , CSS.top (MS.ms (show (yPos - 45) ++ "px"))
-                     , CSS.color (getPlayerColor player.id)
-                     , CSS.backgroundColor Col.white
-                     , CSS.padding "2px 5px"
-                     , CSS.borderRadius "5px"
-                     , CSS.borderWidth "2px"
-                     , CSS.borderStyle "solid"
-                     , CSS.borderColor Col.black
-                     , CSS.zIndex "2"
-                     ]
-        ] 
-        [ M.text (MS.ms ("P" ++ show (player.id + 1))) ] 
-      , H.img_
-        [ P.src_ (M.ms ("../images/player" ++ show (player.id + 1) ++ ".png"))
-        , CSS.style_ [ CSS.position "absolute"
-                      , CSS.left (MS.ms (show (floor xPos :: Int) ++ "px"))
-                      , CSS.top (MS.ms (show (floor yPos :: Int) ++ "px"))
-                      , CSS.width "40px"
-                      , CSS.height "40px"
-                      , CSS.zIndex "1"
-                      ]
+    , Canvas.canvas
+        [ P.width_ (M.ms 600)
+        , P.height_ (M.ms 560)
         ]
-      ] 
-    
-  
--- Render a single bomb
-renderBomb :: Bomb -> M.View Model Action
-renderBomb bomb =
-  let yPos = bomb.x * 40  -- Convert from grid coordinates (1-based) to pixels
-      xPos = bomb.y * 40
-  in H.img_
-     [ P.src_ (M.ms "../images/bomb.png")
-     , CSS.style_ [ CSS.position "absolute"
-                  , CSS.left (MS.ms (show xPos ++ "px"))
-                  , CSS.top (MS.ms (show yPos ++ "px"))
-                  , CSS.width "40px"
-                  , CSS.height "40px"
-                  , CSS.zIndex "1"
-                  ]
-     ]
+        initCanvas
+        (renderCanvas m)
+  ]
+-----------------------------------------------------------------------------
+renderCanvas :: Model -> CanvasState -> Canvas.Canvas ()
+renderCanvas model canvasState = do
+  -- clear
+  Canvas.fillStyle (Canvas.ColorArg (Col.RGB 255 255 255))
+  Canvas.fillRect (0, 0, 600, 560)
 
--- Render a single powerup
-renderPowerup :: Powerup -> M.View Model Action
-renderPowerup powerup =
-  let xPos = powerup.x * 40  -- Convert from grid coordinates (1-based) to pixels
-      yPos = powerup.y * 40
-      getPowerName :: Text -> String
-      getPowerName name
-        | name == "fireup" = "fire"
-        | name == "bombup" = "bomb"
-        | name == "speedup" = "speed"
-        | otherwise = "unknown"
-  in H.img_
-     [ P.src_ (M.ms ("../images/powerup_" ++ getPowerName powerup.name ++ ".png"))
-     , CSS.style_ [ CSS.position "absolute"
-                  , CSS.left (MS.ms (show xPos ++ "px"))
-                  , CSS.top (MS.ms (show yPos ++ "px"))
-                  , CSS.width "40px"
-                  , CSS.height "40px"
-                  , CSS.zIndex "1"
-                  ]
-     ]
+  let gsMaybe = model ^. currentGameState
+  case gsMaybe of
+    Nothing -> return ()
+    Just gs -> do
+      -- print time remaining
+      Canvas.fillStyle (Canvas.ColorArg (Col.RGB 0 0 0))
+      Canvas.font "20px Arial"
+      Canvas.fillText (M.ms ("Time Remaining: " <> show (gs.timeRemaining `div` 60) <> ":" <> show (gs.timeRemaining `mod` 60)), 10, 20)
+      -- draw floor and walls
+      mapM_ (drawGridRow canvasState gs) [0..12]
+      -- draw players
+      mapM_ (drawPlayer canvasState) (filter (\player -> player.isAlive) gs.players)
+      -- draw bombs
+      mapM_ (drawBomb canvasState) gs.bombs
+      -- draw powerups
+      mapM_ (drawPowerup canvasState) gs.powerups
+      -- draw explosions
+      mapM_ (drawExplosion canvasState) gs.explosions
 
--- Render single explosion
-renderExplosion :: Explosion -> M.View Model Action
-renderExplosion explosion =
-  let yPos = explosion.x * 40  -- Convert from grid coordinates (1-based) to pixels
-      xPos = explosion.y * 40
-  in H.img_
-     [ P.src_ (M.ms "../images/explosion.png")
-     , CSS.style_ [ CSS.position "absolute"
-                  , CSS.left (MS.ms (show xPos ++ "px"))
-                  , CSS.top (MS.ms (show yPos ++ "px"))
-                  , CSS.width "40px"
-                  , CSS.height "40px"
-                  , CSS.zIndex "1"
-                  ]
-     ]
+      when gs.isGameOver $ do
+        -- print game over
+        Canvas.fillStyle (Canvas.ColorArg (Col.RGB 255 255 255))
+        Canvas.fillRect (100, 200, 400, 150)
+        Canvas.fillStyle (Canvas.ColorArg (Col.RGB 0 0 0))
+        Canvas.font "40px Arial"
+        Canvas.fillText (M.ms "Game Over", 200, 250)
+        case gs.winner of
+          Just wid -> Canvas.fillText (M.ms ("Player " <> show (wid + 1) <> " Wins!"), 150, 300)
+          Nothing -> Canvas.fillText (M.ms "It's a Draw!", 200, 300)
+      
 
-getSrc :: Int -> MisoString
-getSrc 0 = "../images/floor.png"      -- Empty cell
-getSrc 1 = "../images/wall_soft.png"  -- Breakable wall
-getSrc 2 = "../images/wall_hard.png"  -- Unbreakable wall
-getSrc _ = "../images/error.png"      -- Fallback for unexpected values
+drawGridRow :: CanvasState -> GameState -> Int -> Canvas.Canvas ()
+drawGridRow canvasState gs row = mapM_ drawCell [0..14]
+  where
+    drawCell col = do
+      let cellValue = (gs.grid !! row) !! col
+      let x = col * 40
+      let y = row * 40 + 40
+      case cellValue of
+        0 -> Canvas.drawImage' (canvasState.floorImg, fromIntegral x, fromIntegral y, 40, 40)
+        1 -> Canvas.drawImage' (canvasState.wallSoftImg, fromIntegral x, fromIntegral y, 40, 40)
+        2 -> Canvas.drawImage' (canvasState.wallHardImg, fromIntegral x, fromIntegral y, 40, 40)
+        _ -> return ()
 
+drawPlayer :: CanvasState -> Player -> Canvas.Canvas ()
+drawPlayer canvasState player = do
+  let x = round (player.y * 40)
+  let y = round (player.x * 40) + 40
+  let playerImg = case player.id of
+                    0 -> canvasState.player1Img
+                    1 -> canvasState.player2Img
+                    2 -> canvasState.player3Img
+                    3 -> canvasState.player4Img
+                    _ -> canvasState.player1Img
+  -- draw player
+  Canvas.drawImage' (playerImg, fromIntegral x, fromIntegral y, 40, 40)
+  -- draw player label
+  Canvas.fillStyle (Canvas.ColorArg (Col.RGB 255 255 255))
+  Canvas.fillRect (fromIntegral x, fromIntegral y - 20, 45, 20)
+  Canvas.fillStyle (Canvas.ColorArg (Col.RGB 0 0 0))
+  Canvas.font "12px Arial"
+  Canvas.fillText (M.ms ("Player " <> show (player.id + 1)), fromIntegral x, fromIntegral y - 10)
+
+drawBomb :: CanvasState -> Bomb -> Canvas.Canvas ()
+drawBomb canvasState bomb = do
+  let x = bomb.y * 40
+  let y = bomb.x * 40 + 40
+  Canvas.drawImage' (canvasState.bombImg, fromIntegral x, fromIntegral y, 40, 40)
+
+drawPowerup :: CanvasState -> Powerup -> Canvas.Canvas ()
+drawPowerup canvasState powerup = do
+  let x = powerup.y * 40
+  let y = powerup.x * 40 + 40
+  let powerupImg = case powerup.name of
+                     "bombup" -> canvasState.powerUpBombImg
+                     "fireup" -> canvasState.powerUpFireImg
+                     "speedup" -> canvasState.powerUpSpeedImg
+                     _ -> canvasState.powerUpBombImg
+  Canvas.drawImage' (powerupImg, fromIntegral x, fromIntegral y, 40, 40)
+
+drawExplosion :: CanvasState -> Explosion -> Canvas.Canvas ()
+drawExplosion canvasState explosion = do
+  let x = explosion.y * 40
+  let y = explosion.x * 40 + 40
+  Canvas.drawImage' (canvasState.explosionImg, fromIntegral x, fromIntegral y, 40, 40)
 -----------------------------------------------------------------------------
 mainClient :: IO ()
 mainClient = M.run $ M.startApp (websocketComponent 0) -- 0 is the socket id
-
