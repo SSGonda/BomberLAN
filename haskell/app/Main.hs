@@ -774,9 +774,11 @@ websocketComponent box =
     }
   where
     updateModel x = case x of
+      -----------------------------------------------------------------------------
       SendMessage m -> do
         socket <- use websocket
         sendText socket m
+      -----------------------------------------------------------------------------
       Connect -> do
         currentGameState .= Nothing
         status .= Just "Connecting..."
@@ -786,9 +788,11 @@ websocketComponent box =
           OnClosed
           OnMessage
           OnError
+      -----------------------------------------------------------------------------
       OnOpen socket -> do
         websocket .= socket
         connected .= True
+      -----------------------------------------------------------------------------
       OnClosed closed -> do
         connected .= False
         M.io $ do
@@ -796,6 +800,7 @@ websocketComponent box =
           dateString <- date & M.toLocaleString
           M.consoleLog $ MS.ms (show closed)
           pure $ ChangeStatus "Disconnected..."
+      -----------------------------------------------------------------------------
       OnMessage message -> do
         case decode (MS.fromMisoString message) :: Maybe ServerResponse of
           Just resp -> do
@@ -815,6 +820,7 @@ websocketComponent box =
                   Nothing -> pure ()       
               _ -> pure ()
           Nothing -> status .= Just "Could not parse message"
+      -----------------------------------------------------------------------------
       Update gameState -> do
         oldGameState <- use prevGameState
         playerId <- use boxId
@@ -868,9 +874,11 @@ websocketComponent box =
         old <- use currentGameState
         prevGameState .= old
         currentGameState .= gameState
+      -----------------------------------------------------------------------------
       OnError errorMessage -> do
         M.io_ (M.consoleError errorMessage)
         status .= Just ("Error: " <> errorMessage)
+      -----------------------------------------------------------------------------
       KeyboardEvent keys -> do
         isConnected <- use connected
         unless isConnected $ do
@@ -916,10 +924,12 @@ websocketComponent box =
         heldKeys .= keys
       CloseBox ->
         M.broadcast box
+      ------------------------------------------------------------------------------
       Disconnect -> do
         currentGameState .= Nothing
         status .= Just "Disconnecting..."
         close =<< use websocket
+      -------------------------------------------------------------------------------
       NoOp -> pure ()
 --------------
 jsonRequest :: Text -> Int -> MisoString
