@@ -766,30 +766,31 @@ initCanvas _ = JSaddle.liftJSM $ do
     powerUpSpeedImg = powerUpSpeed
   }
 -----------------------------------------------------------------------------
+-- lenses
 msg :: Lens Model MisoString
 msg = lens _msg $ \r x -> r { _msg = x }
------------------------------------------------------------------------------
+
 websocket :: Lens Model WebSocket
 websocket = lens _websocket $ \r x -> r { _websocket = x }
------------------------------------------------------------------------------
+
 connected :: Lens Model Bool
 connected = lens _connected $ \r x -> r { _connected = x }
------------------------------------------------------------------------------
+
 boxId :: Lens Model Int
 boxId = lens _boxId $ \r x -> r { _boxId = x }
------------------------------------------------------------------------------
+
 lastArrowDir :: Lens Model (Int, Int)
 lastArrowDir = lens _lastArrowDir $ \r x -> r { _lastArrowDir = x }
------------------------------------------------------------------------------
+
 currentGameState :: Lens Model (Maybe GameState)
 currentGameState = lens _currentGameState $ \r x -> r { _currentGameState = x }
------------------------------------------------------------------------------
+
 prevGameState :: Lens Model (Maybe GameState)
 prevGameState = lens _prevGameState $ \r x -> r { _prevGameState = x }
------------------------------------------------------------------------------
+
 status :: Lens Model (Maybe MisoString)
 status = lens _status $ \r x -> r { _status = x }
------------------------------------------------------------------------------
+
 heldKeys :: Lens Model IntSet
 heldKeys = lens _heldKeys $ \r x -> r { _heldKeys = x }
 -----------------------------------------------------------------------------
@@ -961,7 +962,7 @@ websocketComponent box =
         close =<< use websocket
       -------------------------------------------------------------------------------
       NoOp -> pure ()
---------------
+-----------------------------------------------------------------------------
 jsonRequest :: Text -> Int -> MisoString
 jsonRequest a p = MS.ms (encode ClientRequest {
   tag = "ClientUpdate",
