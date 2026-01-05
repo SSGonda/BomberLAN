@@ -523,7 +523,7 @@ updatePowerupAreas gs = gs { players = players', powerups = powerups' }
     applyPowerupForPlayer :: Powerup -> Player -> Player
     applyPowerupForPlayer Powerup { name = "fireup" } p = p { bombRange = p.bombRange + 1 }
     applyPowerupForPlayer Powerup { name = "bombup" } p = p { maxBombs = p.maxBombs + 1 }
-    applyPowerupForPlayer Powerup { name = "speedup" } p = p { speed = p.speed * 1.3 }
+    applyPowerupForPlayer Powerup { name = "speedup" } p = p { speed = p.speed + 0.1 }
     applyPowerupForPlayer _ p = p
 
     checkPowerupsForPlayer :: [Powerup] -> Player -> ([Powerup], Player)
