@@ -999,6 +999,7 @@ renderCanvas model canvasState = do
   Canvas.fillRect (0, 0, 600, 560)
 
   let gsMaybe = model ^. currentGameState
+      playerId = _boxId model
   case gsMaybe of
     Nothing -> return ()
     Just gs -> do
@@ -1006,6 +1007,9 @@ renderCanvas model canvasState = do
       Canvas.fillStyle (Canvas.ColorArg (Col.RGB 0 0 0))
       Canvas.font "20px Arial"
       Canvas.fillText (M.ms ("Time Remaining: " <> leadingZeroes (gs.timeRemaining `div` 60) <> ":" <> leadingZeroes (gs.timeRemaining `mod` 60)), 10, 20)
+      -- print player info
+      let playerInfo = gs.players !! playerId
+      Canvas.fillText (M.ms ("You are " <> if playerInfo.isAlive then "Player " <> show (playerId + 1) else "Dead"), 10, 40)
       -- draw floor and walls
       mapM_ (drawGridRow canvasState gs) [0..12]
       -- draw players
