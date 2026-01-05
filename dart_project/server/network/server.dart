@@ -29,8 +29,6 @@ class GameServer {
     final handler = webSocketHandler((WebSocketChannel webSocket) {
       webSocket.stream.listen(
         (message) => _handleMessage(webSocket, message),
-        onDone: () => _handleDisconnect(webSocket),
-        onError: (error) => _handleError(webSocket, error),
       );
     });
 
@@ -177,21 +175,6 @@ class GameServer {
     if (gameState.isGameStarted && !gameState.isGameOver) {
       gameState.plantBomb(message.playerId);
     }
-  }
-
-  void _handleDisconnect(WebSocketChannel webSocket) {
-    final playerId = int.parse(clientConnections[webSocket]!);
-    if (playerId != null) {
-      gameState.removePlayer(playerId);
-      clientConnections.remove(webSocket);
-
-      _broadcastMessage({'tag': 'player_left', 'playerId': playerId});
-    }
-  }
-
-  void _handleError(WebSocketChannel webSocket, dynamic error) {
-    print('WebSocket error: $error');
-    _handleDisconnect(webSocket);
   }
 
   void _broadcastMessage(Map<String, dynamic> message) {
