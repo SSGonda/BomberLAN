@@ -830,7 +830,7 @@ websocketComponent box =
                 cons <-  JSaddle.jsg ("Audio" :: String)
                 audio <-JSaddle.new cons ["../assets/audio/" <> sound <> ".mp3" :: String]
                 _ <- audio JSaddle.# ("play" :: String) $ ()
-                pure $ NoOp 
+                pure NoOp 
             case oldGameState of
               Just oldGs -> do
                 -- player death sound
@@ -841,7 +841,7 @@ websocketComponent box =
                     cons <-  JSaddle.jsg ("Audio" :: String)
                     audio <-JSaddle.new cons ["../assets/audio/death.mp3" :: String]
                     _ <- audio JSaddle.# ("play" :: String) $ ()
-                    pure $ NoOp
+                    pure NoOp
               
                 -- bomb explosion sound
                 let oldBombs = length oldGs.bombs
@@ -851,7 +851,7 @@ websocketComponent box =
                     cons <-  JSaddle.jsg ("Audio" :: String)
                     audio <-JSaddle.new cons ["../assets/audio/explosion.mp3" :: String]
                     _ <- audio JSaddle.# ("play" :: String) $ ()
-                    pure $ NoOp
+                    pure NoOp
 
                 -- get powerup sound
                 let oldPowerups = length (oldGs.players !! playerId).activePowerups
@@ -861,7 +861,7 @@ websocketComponent box =
                     cons <-  JSaddle.jsg ("Audio" :: String)
                     audio <-JSaddle.new cons ["../assets/audio/powerup.mp3" :: String]
                     _ <- audio JSaddle.# ("play" :: String) $ ()
-                    pure $ NoOp
+                    pure NoOp
               Nothing -> pure ()
           Nothing -> pure ()
           -- update game state
@@ -873,38 +873,47 @@ websocketComponent box =
         status .= Just ("Error: " <> errorMessage)
       KeyboardEvent keys -> do
         isConnected <- use connected
+        unless isConnected $ do
+          M.io_ $ M.consoleLog "Not connected, ignoring input"
+          heldKeys .= keys
+          return ()
+        
         clientNumber <- use boxId
         oldKeys <- use heldKeys
-        let dirs = IntSet.intersection keys (IntSet.fromList [37,38,39,40])
-            safeHead [] = -1
-            safeHead (x':_) = x' 
-            newKeys = IntSet.difference dirs (IntSet.intersection oldKeys (IntSet.fromList [37,38,39,40]))
-            activeKey = if not (IntSet.null newKeys)
-                        then safeHead (IntSet.elems newKeys)
-                        else safeHead (IntSet.elems dirs)
-            action = case activeKey of
-                      37 -> "left"
-                      38 -> "up"
-                      39 -> "right"
-                      40 -> "down"
-                      _ -> "stop"
-        prevDir <- use lastArrowDir
-        heldKeys .= keys
-        let newDir = case action of
-                      "left"  -> (0, -1)
-                      "right" -> (0, 1)
-                      "up"    -> (-1, 0)
-                      "down"  -> (1, 0)
-                      _       -> (0, 0)
-        when (isConnected && newDir /= prevDir) $ do
-          lastArrowDir .= newDir
-          M.issue (SendMessage (jsonRequest action clientNumber))
-        let wasBombPressed = IntSet.member 32 oldKeys
-            isBombPressed = IntSet.member 32 keys
-        when (isConnected && isBombPressed && not wasBombPressed) $ do
+        
+        let arrowKeys = IntSet.fromList [37,38,39,40]
+            currentArrows = IntSet.intersection keys arrowKeys
+            oldArrows = IntSet.intersection oldKeys arrowKeys
+        -- move if new direction
+        when (currentArrows /= oldArrows) $ do
+          let direction
+                | IntSet.member 37 currentArrows = (0, - 1) -- left
+                | IntSet.member 38 currentArrows = (- 1, 0) -- up
+                | IntSet.member 39 currentArrows = (0, 1) -- right
+                | IntSet.member 40 currentArrows = (1, 0) -- down
+                | otherwise = (0, 0) -- stop
+          
+          prevDir <- use lastArrowDir
+          when (direction /= prevDir) $ do
+            lastArrowDir .= direction
+            let action = case direction of
+                          (0, -1) -> "left"
+                          (-1, 0) -> "up"
+                          (0, 1)  -> "right"
+                          (1, 0)  -> "down"
+                          _       -> "stop"
+            M.issue (SendMessage (jsonRequest action clientNumber))
+        
+        -- place bomb on space press
+        let spaceKey = 32
+            wasSpacePressed = IntSet.member spaceKey oldKeys
+            isSpacePressed = IntSet.member spaceKey keys
+        
+        when (isSpacePressed && not wasSpacePressed) $ do
           M.issue (SendMessage (jsonRequest "bomb" clientNumber))
-        unless isConnected $
-          M.io_ $ M.consoleLog "Not connected, ignoring input"
+        
+        -- update held keys
+        heldKeys .= keys
       CloseBox ->
         M.broadcast box
       Disconnect -> do
