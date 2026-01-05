@@ -124,8 +124,6 @@ class GameServer {
 
     final playerId = gameState.players.length;
 
-    // Add player to game
-    print(playerId.runtimeType);
     final playerNumber = gameState.addPlayer(playerId);
 
     if (playerNumber == null) {
