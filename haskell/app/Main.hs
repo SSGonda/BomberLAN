@@ -664,6 +664,7 @@ data Action
   | Connect
   | Disconnect
   | CloseBox
+  | NoOp
 -----------------------------------------------------------------------------
 data Model = Model
   { _msg :: MisoString
@@ -671,6 +672,7 @@ data Model = Model
   , _connected :: Bool
   , _connections :: [WebSocket]
   , _currentGameState :: Maybe GameState
+  , _prevGameState :: Maybe GameState
   , _lastArrowDir :: (Int, Int)
   , _status :: Maybe MisoString
   , _heldKeys :: IntSet
@@ -752,6 +754,9 @@ lastArrowDir = lens _lastArrowDir $ \r x -> r { _lastArrowDir = x }
 currentGameState :: Lens Model (Maybe GameState)
 currentGameState = lens _currentGameState $ \r x -> r { _currentGameState = x }
 -----------------------------------------------------------------------------
+prevGameState :: Lens Model (Maybe GameState)
+prevGameState = lens _prevGameState $ \r x -> r { _prevGameState = x }
+-----------------------------------------------------------------------------
 status :: Lens Model (Maybe MisoString)
 status = lens _status $ \r x -> r { _status = x }
 -----------------------------------------------------------------------------
@@ -759,7 +764,7 @@ heldKeys :: Lens Model IntSet
 heldKeys = lens _heldKeys $ \r x -> r { _heldKeys = x }
 -----------------------------------------------------------------------------
 emptyModel :: Int -> Model
-emptyModel = Model mempty emptyWebSocket False [] Nothing (0, 0) Nothing mempty
+emptyModel = Model mempty emptyWebSocket False [] Nothing Nothing (0, 0) Nothing mempty
 -----------------------------------------------------------------------------
 websocketComponent :: Int -> M.Component parent Model Action
 websocketComponent box =
@@ -810,8 +815,60 @@ websocketComponent box =
                   Nothing -> pure ()       
               _ -> pure ()
           Nothing -> status .= Just "Could not parse message"
-      Update gs ->
-        currentGameState .= gs
+      Update gameState -> do
+        oldGameState <- use prevGameState
+        playerId <- use boxId
+        case gameState of
+          Just gs -> do
+            -- game over sound
+            when (gs.isGameOver == True) $ do
+              M.io $ do
+                let sound = case gs.winner of
+                              Just w | w == playerId -> "win"
+                              Just _ -> "lose"
+                              Nothing -> "draw"
+                cons <-  JSaddle.jsg ("Audio" :: String)
+                audio <-JSaddle.new cons ["../assets/audio/" <> sound <> ".mp3" :: String]
+                _ <- audio JSaddle.# ("play" :: String) $ ()
+                pure $ NoOp 
+            case oldGameState of
+              Just oldGs -> do
+                -- player death sound
+                let oldAlive = (oldGs.players !! playerId).isAlive
+                    newAlive = (gs.players !! playerId).isAlive
+                when (oldAlive && not newAlive) $ do
+                  M.io $ do
+                    cons <-  JSaddle.jsg ("Audio" :: String)
+                    audio <-JSaddle.new cons ["../assets/audio/death.mp3" :: String]
+                    _ <- audio JSaddle.# ("play" :: String) $ ()
+                    pure $ NoOp
+              
+                -- bomb explosion sound
+                let oldBombs = length oldGs.bombs
+                    newBombs = length gs.bombs
+                when (newBombs < oldBombs) $ do
+                  M.io $ do
+                    cons <-  JSaddle.jsg ("Audio" :: String)
+                    audio <-JSaddle.new cons ["../assets/audio/explosion.mp3" :: String]
+                    _ <- audio JSaddle.# ("play" :: String) $ ()
+                    pure $ NoOp
+
+                -- get powerup sound
+                let oldPowerups = length (oldGs.players !! playerId).activePowerups
+                    newPowerups = length (gs.players !! playerId).activePowerups
+                when (newPowerups > oldPowerups) $ do
+                  M.io $ do
+                    cons <-  JSaddle.jsg ("Audio" :: String)
+                    audio <-JSaddle.new cons ["../assets/audio/powerup.mp3" :: String]
+                    _ <- audio JSaddle.# ("play" :: String) $ ()
+                    pure $ NoOp
+
+              Nothing -> pure ()
+          Nothing -> pure ()
+          -- update game state
+        old <- use currentGameState
+        prevGameState .= old
+        currentGameState .= gameState
       OnError errorMessage -> do
         M.io_ (M.consoleError errorMessage)
         status .= Just ("Error: " <> errorMessage)
@@ -855,7 +912,7 @@ websocketComponent box =
         currentGameState .= Nothing
         status .= Just "Disconnecting..."
         close =<< use websocket
-      _ -> pure ()
+      NoOp -> pure ()
 --------------
 jsonRequest :: Text -> Int -> MisoString
 jsonRequest a p = MS.ms (encode ClientRequest {
