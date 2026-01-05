@@ -37,7 +37,7 @@ Using miso and websockets
 
 To start the server,
 
-Navigate to `haskell`
+Navigate to `haskell-project`
 
 Run `cabal run haskell -- <players> <game duration> --host <port>`
 
@@ -49,7 +49,7 @@ The server should be started in `127.0.0.1:<port>`
 
 To start a client,
 
-Navigate to `haskell`
+Navigate to `haskell-project`
 
 Run `cabal run`
 
