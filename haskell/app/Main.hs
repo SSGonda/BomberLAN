@@ -821,7 +821,7 @@ websocketComponent box =
         case gameState of
           Just gs -> do
             -- game over sound
-            when (gs.isGameOver == True) $ do
+            when gs.isGameOver $ do
               M.io $ do
                 let sound = case gs.winner of
                               Just w | w == playerId -> "win"
@@ -862,7 +862,6 @@ websocketComponent box =
                     audio <-JSaddle.new cons ["../assets/audio/powerup.mp3" :: String]
                     _ <- audio JSaddle.# ("play" :: String) $ ()
                     pure $ NoOp
-
               Nothing -> pure ()
           Nothing -> pure ()
           -- update game state
@@ -988,6 +987,11 @@ viewModel m =
         (renderCanvas m)
   ]
 -----------------------------------------------------------------------------
+leadingZeroes :: Int -> String
+leadingZeroes n
+  | n < 10 = "0" <> show n
+  | otherwise = show n
+
 renderCanvas :: Model -> CanvasState -> Canvas.Canvas ()
 renderCanvas model canvasState = do
   -- clear
@@ -1001,7 +1005,7 @@ renderCanvas model canvasState = do
       -- print time remaining
       Canvas.fillStyle (Canvas.ColorArg (Col.RGB 0 0 0))
       Canvas.font "20px Arial"
-      Canvas.fillText (M.ms ("Time Remaining: " <> show (gs.timeRemaining `div` 60) <> ":" <> show (gs.timeRemaining `mod` 60)), 10, 20)
+      Canvas.fillText (M.ms ("Time Remaining: " <> leadingZeroes (gs.timeRemaining `div` 60) <> ":" <> leadingZeroes (gs.timeRemaining `mod` 60)), 10, 20)
       -- draw floor and walls
       mapM_ (drawGridRow canvasState gs) [0..12]
       -- draw players
