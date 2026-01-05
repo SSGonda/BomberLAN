@@ -73,7 +73,6 @@ class GameState {
       bombs.remove(bomb.id);
     }
 
-    // Add player number back to queue
     playerQueue.add('P${player.id}');
     players.removeAt(playerId);
     connectedPlayers--;
@@ -130,7 +129,6 @@ class GameState {
     // handle chain reaction
     final bombsToExplode = <Bomb>[];
     for (final cell in explosionCells) {
-      // Check for other bombs
       for (final otherBomb in bombs.values) {
         if (otherBomb.id != bombId &&
             otherBomb.position == cell.position &&
@@ -145,7 +143,6 @@ class GameState {
         }
       }
 
-      // Destroy soft blocks
       if (grid.hasSoftBlock(cell.position)) {
         grid.destroySoftBlock(cell.position);
 
@@ -174,7 +171,6 @@ class GameState {
       }
     }
 
-    // Remove the bomb
     bombs.remove(bombId);
 
     // handle chain reactions
@@ -224,12 +220,10 @@ class GameState {
           player.position.y.round(),
         );
 
-        // final powerupsToRemove = <String>[];
         for (final powerup in List.of(powerups)) {
           if (powerup.position == playerCell) {
             player.addPowerup(powerup.type);
             powerups.remove(powerup);
-            // powerup.toRemove = true;
           }
         }
       }

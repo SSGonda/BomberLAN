@@ -460,14 +460,39 @@ explodeCoord r (x, y) currentTime gs = do
     removePowerups [] ps = ps
     removePowerups _ [] = []
     removePowerups ((i, j) : coords) ps = removePowerups coords (filter (\p -> p.x /= i || p.y /= j) ps)
+    
+    explosionSouth = range ((0, 1), (0, r))
+    explosionEast = range ((1, 0), (r, 0))
+    explosionWest = reverse $ range ((-r, 0), (-1, 0))
+    explosionNorth = reverse $ range ((0, -r), (0, -1))
 
-    (explodables, softs) = categorizeBlocks (map (\(i, j) -> (i + x, j + y)) (explosionPositions r)) gs.grid
+    explodeUntilHard :: [(Int, Int)] -> [(Int, Int)]
+    explodeUntilHard [] = []
+    explodeUntilHard ((i, j) : ijs ) = case safeGridIndex i j gs.grid of
+      Just 2 -> []
+      Nothing -> []
+      _ -> (i, j) : explodeUntilHard ijs
+
+    toGridTiles :: [(Int, Int)] -> [(Int, Int)]
+    toGridTiles = map (\(i, j) -> (i + x, j + y))
+
+    geS = toGridTiles explosionSouth
+    geE = toGridTiles explosionEast
+    geN = toGridTiles explosionNorth
+    geW = toGridTiles explosionWest
+
+    toExplode = explodeUntilHard geS
+      <> explodeUntilHard geE
+      <> explodeUntilHard geN
+      <> explodeUntilHard geW
+      <> [(0, 0)]
+
+    (explodables, softs) = categorizeBlocks toExplode gs.grid
 
     grid' = removeSoft softs gs.grid
     bombs' = detonateBombs explodables gs.bombs
     powerups' = removePowerups explodables gs.powerups
     explosions' = placeExplosives explodables gs.explosions
-    -- TODO add handling for damaging players
 
 explodeCoords :: [(Int, Int, Int)] -> UTCTime -> GameState -> IO GameState
 explodeCoords [] _ gs = return gs
@@ -498,7 +523,7 @@ updatePowerupAreas gs = gs { players = players', powerups = powerups' }
     applyPowerupForPlayer :: Powerup -> Player -> Player
     applyPowerupForPlayer Powerup { name = "fireup" } p = p { bombRange = p.bombRange + 1 }
     applyPowerupForPlayer Powerup { name = "bombup" } p = p { maxBombs = p.maxBombs + 1 }
-    applyPowerupForPlayer Powerup { name = "speedup" } p = p { speed = p.speed * 1.3 }
+    applyPowerupForPlayer Powerup { name = "speedup" } p = p { speed = p.speed + 0.1 }
     applyPowerupForPlayer _ p = p
 
     checkPowerupsForPlayer :: [Powerup] -> Player -> ([Powerup], Player)
@@ -605,14 +630,19 @@ updatePlayerPosition gs p = p { x = x'', y = y'' }
     x' = p.x + fromIntegral p.deltaX * p.speed
     y' = p.y + fromIntegral p.deltaY * p.speed
 
-    positionsToCheck = map (\(i, j) -> (i + round x', j + round y')) (explosionPositions 1)
-    collideableGridPositions = getCollideable positionsToCheck gs.grid
+    isTileCollidePlayer :: Int -> Int -> Bool
+    isTileCollidePlayer i j = case safeGridIndex i j gs.grid of
+      Just 0 -> False
+      Nothing -> True
+      _ -> isCollideWithPlayer 1.0 x' y' i j
+
+    (tx, ty) = (round x', round y')
 
     bombDistances = map (\b -> (distance p.x p.y b.x b.y, distance x' y' b.x b.y)) gs.bombs
 
     isGoingToBomb = any (\(before, after) -> before >= 0.5 && after < 0.5) bombDistances
 
-    (x'', y'') = if any (uncurry (isCollideWithPlayer 0.8 x' y')) collideableGridPositions || isGoingToBomb || not p.isAlive then (p.x, p.y) else (x', y')
+    (x'', y'') = if isTileCollidePlayer tx ty || isGoingToBomb || not p.isAlive then (p.x, p.y) else (x', y')
 
 updatePlayerPositions :: GameState -> GameState
 updatePlayerPositions gs = gs { players = map (updatePlayerPosition gs) gs.players }
