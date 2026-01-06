@@ -485,7 +485,7 @@ explodeCoord r (x, y) currentTime gs = do
       <> explodeUntilHard geE
       <> explodeUntilHard geN
       <> explodeUntilHard geW
-      <> [(0, 0)]
+      <> toGridTiles [(0, 0)]
 
     (explodables, softs) = categorizeBlocks toExplode gs.grid
 
@@ -975,30 +975,6 @@ viewModel m =
   H.div_
   [ P.className "websocket-box" ]
   [ H.div_
-    [ P.class_ "websocket-header" ]
-    [ H.div_
-      []
-      [ H.span_
-        [ P.classList_
-          [ ("websocket-status", True)
-          , ("status-disconnected", not (m ^. connected))
-          , ("status-connected", m ^. connected)
-          ]
-        ]
-        []
-      , H.span_
-        [ P.class_ "websocket-id"
-        ]
-        [ M.text $ "socket-" <> MS.ms (m ^. boxId) ]
-      ]
-    , H.button_
-      [ P.aria_ "label" "Close"
-      , P.class_ "btn-close"
-      , H.onClick CloseBox
-      ]
-      [ "×" ]
-    ]
-    , H.div_
       [ P.class_ "websocket-controls" ]
       [ M.optionalAttrs
         H.button_
