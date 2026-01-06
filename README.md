@@ -1,5 +1,7 @@
 # CS:GO
 
+Part2 Vids: [https://drive.google.com/drive/folders/1xckwVoeLrabiIE_kbToqNrGVGgJxk4wz?usp=drive_link](https://drive.google.com/drive/folders/1xckwVoeLrabiIE_kbToqNrGVGgJxk4wz?usp=drive_link)
+
 ## Dart
 Using flame and websockets
 
