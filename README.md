@@ -3,6 +3,22 @@
 A monorepo for a LAN multiplayer bomberman clone written with dart and haskell.
 > Note: Part 2 Videos are linked as a Google Drive link containing all member videos contained [at the bottom of this README](#part-2), thank you!
 
+## Highest Phases Achieved
+
+### Dart
+
+- Server
+    - Phase 4
+- Client
+    - Phase 4
+
+### Haskell
+
+- Server
+    - Phase 4
+- Client
+    - Phase 4
+
 ## Members and Contributions
 
 - Bumanglag, Lucas
@@ -32,7 +48,7 @@ A monorepo for a LAN multiplayer bomberman clone written with dart and haskell.
 
 Using flame and websockets
 
-### Highest Phase Accomplished
+### Highest Phase Accomplished for Server and Client
  
 - Phase 4
 
@@ -65,7 +81,7 @@ This should run a client that connects to `127.0.0.1` in port `15000`
 
 Using miso and websockets
 
-### Highest Phase Accomplished
+### Highest Phase Accomplished for Server and Client
 
 - Phase 4
 
@@ -96,8 +112,6 @@ This should run a client that connects to `127.0.0.1` in port `15000`
 ## Part 2
 
 Part 2 Videos: [https://drive.google.com/drive/folders/1xckwVoeLrabiIE_kbToqNrGVGgJxk4wz?usp=drive_link](https://drive.google.com/drive/folders/1xckwVoeLrabiIE_kbToqNrGVGgJxk4wz?usp=drive_link)
-
-
 
 ## References
 
