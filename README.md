@@ -1,9 +1,40 @@
 # CS:GO
 
-Part2 Vids: [https://drive.google.com/drive/folders/1xckwVoeLrabiIE_kbToqNrGVGgJxk4wz?usp=drive_link](https://drive.google.com/drive/folders/1xckwVoeLrabiIE_kbToqNrGVGgJxk4wz?usp=drive_link)
+A monorepo for a LAN multiplayer bomberman clone written with dart and haskell.
+> Note: Part 2 Videos are linked as a Google Drive link containing all member videos contained [at the bottom of this README](#part-2), thank you!
+
+## Members and Contributions
+
+- Bumanglag, Lucas
+    - Part 1
+        - Haskell Client
+    - Part 2
+        - Option 2, Teleport
+- Gonda, Stephen James S.
+    - Part 1
+        - Haskell Server
+    - Part 2
+        - Option 4, Vest (Haskell Server-Client)
+- Magpantay, Antonio N.
+    - Part 1
+        - Dart Client
+    - Part 2
+        - Option 1, Five Players
+- Mercado, Ervin Jerod
+    - Part 1
+        - Dart Server
+    - Part 2
+        - Option 5, Heart
+
+# Part 1
 
 ## Dart
+
 Using flame and websockets
+
+### Highest Phase Accomplished
+ 
+- Phase 4
 
 ### How to Run
 
@@ -31,7 +62,12 @@ This should run a client that connects to `127.0.0.1` in port `15000`
 
 
 ## Haskell
+
 Using miso and websockets
+
+### Highest Phase Accomplished
+
+- Phase 4
 
 ### How to Run
 
@@ -56,6 +92,12 @@ Navigate to `haskell-project`
 Run `cabal run`
 
 This should run a client that connects to `127.0.0.1` in port `15000`
+
+## Part 2
+
+Part 2 Videos: [https://drive.google.com/drive/folders/1xckwVoeLrabiIE_kbToqNrGVGgJxk4wz?usp=drive_link](https://drive.google.com/drive/folders/1xckwVoeLrabiIE_kbToqNrGVGgJxk4wz?usp=drive_link)
+
+
 
 ## References
 
