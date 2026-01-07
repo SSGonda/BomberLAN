@@ -1,5 +1,27 @@
 # CS:GO
 
+### Highest phase:
+
+`Dart server` - Phase 4
+
+`Dart client` - Phase 4
+
+`Haskell server` - Phase 4
+
+`Haskell client` - Phase 4
+
+<br>
+
+### Part 2:
+
+`Magpantay` - Option 1
+
+`Bumaglag` - Option 2
+
+`Gonda` - Option 4
+
+`Mercado` - Option 5
+
 Part2 Vids: [https://drive.google.com/drive/folders/1xckwVoeLrabiIE_kbToqNrGVGgJxk4wz?usp=drive_link](https://drive.google.com/drive/folders/1xckwVoeLrabiIE_kbToqNrGVGgJxk4wz?usp=drive_link)
 
 ## Dart
