@@ -60,7 +60,8 @@ main = do
               if numPlayersInt < 2 || numPlayersInt > 4 || gameDuraInt < 30 || gameDuraInt > 600
                 then mainNothing
                 else mainServer numPlayersInt gameDuraInt (read port :: Int)
-            _ -> mainClient
+            [ip, port] -> mainClient ip port
+            _ -> mainNothing
     mainToRun
 
 -- =--------------------------------=
@@ -797,8 +798,8 @@ heldKeys = lens _heldKeys $ \r x -> r { _heldKeys = x }
 emptyModel :: Int -> Model
 emptyModel = Model mempty emptyWebSocket False [] Nothing Nothing (0, 0) Nothing mempty
 -----------------------------------------------------------------------------
-websocketComponent :: Int -> M.Component parent Model Action
-websocketComponent box =
+websocketComponent :: String -> String -> Int -> M.Component parent Model Action
+websocketComponent ip port box =
   (M.component (emptyModel box) updateModel viewModel)
     { M.events = M.defaultEvents <> M.keyboardEvents
     , M.subs = [ keyboardSub KeyboardEvent ]
@@ -814,7 +815,7 @@ websocketComponent box =
         currentGameState .= Nothing
         status .= Just "Connecting..."
         connectText
-          "ws:127.0.0.1:15000"
+          ("ws:" <> MS.ms ip <> ":" <> MS.ms port)
           OnOpen
           OnClosed
           OnMessage
@@ -1114,5 +1115,5 @@ drawExplosion canvasState explosion = do
   let y = explosion.x * 40 + 40
   Canvas.drawImage' (canvasState.explosionImg, fromIntegral x, fromIntegral y, 40, 40)
 -----------------------------------------------------------------------------
-mainClient :: IO ()
-mainClient = M.run $ M.startApp (websocketComponent 0) -- 0 is the socket id
+mainClient :: String -> String -> IO ()
+mainClient ip port = M.run $ M.startApp (websocketComponent ip port 0) -- 0 is the socket id
