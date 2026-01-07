@@ -72,7 +72,7 @@ Navigate to `dart_project/client`
 
 Run `flutter run --dart-entrypoint-args="127.0.0.1 15800"`
 
-This should run a client that connects to `127.0.0.1` in port `15000`
+This should run a client that connects to `127.0.0.1` in port `15800`
 
 ## Haskell
 
