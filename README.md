@@ -74,9 +74,6 @@ Run `flutter run --dart-entrypoint-args="127.0.0.1 15800"`
 
 This should run a client that connects to `127.0.0.1` in port `15000`
 
-
-
-
 ## Haskell
 
 Using miso and websockets
@@ -99,15 +96,21 @@ Where players, game duration and port are integers without the `<>`
 
 The server should be started in `127.0.0.1:<port>`
 
+As an example, the follorwing is a valid command tested in Powershell Windows 11, `cabal run haskell -- 2 120 --host 15000`
+
 #### Client
 
 To start a client,
 
 Navigate to `haskell-project`
 
-Run `cabal run`
+Run `cabal run haskell -- <ip> <port>`
 
-This should run a client that connects to `127.0.0.1` in port `15000`
+> The option `command line arguments` was chosen for running the client.
+
+This should run a client that connects to `ip` in port `port`
+
+As an example, the following is a valid command tested in Powershell Windows 11, `cabal run haskell -- 127.0.0.1 15000`
 
 ## Part 2
 
