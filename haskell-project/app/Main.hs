@@ -667,22 +667,6 @@ parseClientRequest pid cr gs
 -- https://github.com/haskell-miso/miso-websocket/blob/main/src/WebSocket.hs
 
 -----------------------------------------------------------------------------
-data Message
-  = Message
-  { dateString :: MisoString
-  , message :: MisoString
-  , origin :: Origin
-  } deriving (Eq, Show, Generic)
------------------------------------------------------------------------------
-data Origin = CLIENT | SYSTEM | SERVER
-  deriving (Eq, Show, Generic)
------------------------------------------------------------------------------
-instance ToMisoString Origin where
-  toMisoString x = case x of
-    CLIENT -> "CLIENT"
-    SYSTEM -> "SYSTEM"
-    SERVER -> "SERVER"
------------------------------------------------------------------------------
 data Action
   = OnOpen WebSocket
   | OnMessage MisoString
@@ -828,8 +812,6 @@ websocketComponent ip port box =
       OnClosed closed -> do
         connected .= False
         M.io $ do
-          date <- M.newDate
-          dateString <- date & M.toLocaleString
           M.consoleLog $ MS.ms (show closed)
           pure $ ChangeStatus "Disconnected..."
       -----------------------------------------------------------------------------
