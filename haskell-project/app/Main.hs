@@ -60,7 +60,8 @@ main = do
               if numPlayersInt < 2 || numPlayersInt > 4 || gameDuraInt < 30 || gameDuraInt > 600
                 then mainNothing
                 else mainServer numPlayersInt gameDuraInt (read port :: Int)
-            _ -> mainClient
+            [ip, port] -> mainClient ip port
+            _ -> mainNothing
     mainToRun
 
 -- =--------------------------------=
@@ -460,14 +461,39 @@ explodeCoord r (x, y) currentTime gs = do
     removePowerups [] ps = ps
     removePowerups _ [] = []
     removePowerups ((i, j) : coords) ps = removePowerups coords (filter (\p -> p.x /= i || p.y /= j) ps)
+    
+    explosionSouth = range ((0, 1), (0, r))
+    explosionEast = range ((1, 0), (r, 0))
+    explosionWest = reverse $ range ((-r, 0), (-1, 0))
+    explosionNorth = reverse $ range ((0, -r), (0, -1))
 
-    (explodables, softs) = categorizeBlocks (map (\(i, j) -> (i + x, j + y)) (explosionPositions r)) gs.grid
+    explodeUntilHard :: [(Int, Int)] -> [(Int, Int)]
+    explodeUntilHard [] = []
+    explodeUntilHard ((i, j) : ijs ) = case safeGridIndex i j gs.grid of
+      Just 2 -> []
+      Nothing -> []
+      _ -> (i, j) : explodeUntilHard ijs
+
+    toGridTiles :: [(Int, Int)] -> [(Int, Int)]
+    toGridTiles = map (\(i, j) -> (i + x, j + y))
+
+    geS = toGridTiles explosionSouth
+    geE = toGridTiles explosionEast
+    geN = toGridTiles explosionNorth
+    geW = toGridTiles explosionWest
+
+    toExplode = explodeUntilHard geS
+      <> explodeUntilHard geE
+      <> explodeUntilHard geN
+      <> explodeUntilHard geW
+      <> toGridTiles [(0, 0)]
+
+    (explodables, softs) = categorizeBlocks toExplode gs.grid
 
     grid' = removeSoft softs gs.grid
     bombs' = detonateBombs explodables gs.bombs
     powerups' = removePowerups explodables gs.powerups
     explosions' = placeExplosives explodables gs.explosions
-    -- TODO add handling for damaging players
 
 explodeCoords :: [(Int, Int, Int)] -> UTCTime -> GameState -> IO GameState
 explodeCoords [] _ gs = return gs
@@ -498,7 +524,7 @@ updatePowerupAreas gs = gs { players = players', powerups = powerups' }
     applyPowerupForPlayer :: Powerup -> Player -> Player
     applyPowerupForPlayer Powerup { name = "fireup" } p = p { bombRange = p.bombRange + 1 }
     applyPowerupForPlayer Powerup { name = "bombup" } p = p { maxBombs = p.maxBombs + 1 }
-    applyPowerupForPlayer Powerup { name = "speedup" } p = p { speed = p.speed * 1.3 }
+    applyPowerupForPlayer Powerup { name = "speedup" } p = p { speed = p.speed + 0.1 }
     applyPowerupForPlayer _ p = p
 
     checkPowerupsForPlayer :: [Powerup] -> Player -> ([Powerup], Player)
@@ -605,14 +631,19 @@ updatePlayerPosition gs p = p { x = x'', y = y'' }
     x' = p.x + fromIntegral p.deltaX * p.speed
     y' = p.y + fromIntegral p.deltaY * p.speed
 
-    positionsToCheck = map (\(i, j) -> (i + round x', j + round y')) (explosionPositions 1)
-    collideableGridPositions = getCollideable positionsToCheck gs.grid
+    isTileCollidePlayer :: Int -> Int -> Bool
+    isTileCollidePlayer i j = case safeGridIndex i j gs.grid of
+      Just 0 -> False
+      Nothing -> True
+      _ -> isCollideWithPlayer 1.0 x' y' i j
+
+    (tx, ty) = (round x', round y')
 
     bombDistances = map (\b -> (distance p.x p.y b.x b.y, distance x' y' b.x b.y)) gs.bombs
 
     isGoingToBomb = any (\(before, after) -> before >= 0.5 && after < 0.5) bombDistances
 
-    (x'', y'') = if any (uncurry (isCollideWithPlayer 0.8 x' y')) collideableGridPositions || isGoingToBomb || not p.isAlive then (p.x, p.y) else (x', y')
+    (x'', y'') = if isTileCollidePlayer tx ty || isGoingToBomb || not p.isAlive then (p.x, p.y) else (x', y')
 
 updatePlayerPositions :: GameState -> GameState
 updatePlayerPositions gs = gs { players = map (updatePlayerPosition gs) gs.players }
@@ -736,59 +767,64 @@ initCanvas _ = JSaddle.liftJSM $ do
     powerUpSpeedImg = powerUpSpeed
   }
 -----------------------------------------------------------------------------
+-- lenses
 msg :: Lens Model MisoString
 msg = lens _msg $ \r x -> r { _msg = x }
------------------------------------------------------------------------------
+
 websocket :: Lens Model WebSocket
 websocket = lens _websocket $ \r x -> r { _websocket = x }
------------------------------------------------------------------------------
+
 connected :: Lens Model Bool
 connected = lens _connected $ \r x -> r { _connected = x }
------------------------------------------------------------------------------
+
 boxId :: Lens Model Int
 boxId = lens _boxId $ \r x -> r { _boxId = x }
------------------------------------------------------------------------------
+
 lastArrowDir :: Lens Model (Int, Int)
 lastArrowDir = lens _lastArrowDir $ \r x -> r { _lastArrowDir = x }
------------------------------------------------------------------------------
+
 currentGameState :: Lens Model (Maybe GameState)
 currentGameState = lens _currentGameState $ \r x -> r { _currentGameState = x }
------------------------------------------------------------------------------
+
 prevGameState :: Lens Model (Maybe GameState)
 prevGameState = lens _prevGameState $ \r x -> r { _prevGameState = x }
------------------------------------------------------------------------------
+
 status :: Lens Model (Maybe MisoString)
 status = lens _status $ \r x -> r { _status = x }
------------------------------------------------------------------------------
+
 heldKeys :: Lens Model IntSet
 heldKeys = lens _heldKeys $ \r x -> r { _heldKeys = x }
 -----------------------------------------------------------------------------
 emptyModel :: Int -> Model
 emptyModel = Model mempty emptyWebSocket False [] Nothing Nothing (0, 0) Nothing mempty
 -----------------------------------------------------------------------------
-websocketComponent :: Int -> M.Component parent Model Action
-websocketComponent box =
+websocketComponent :: String -> String -> Int -> M.Component parent Model Action
+websocketComponent ip port box =
   (M.component (emptyModel box) updateModel viewModel)
     { M.events = M.defaultEvents <> M.keyboardEvents
     , M.subs = [ keyboardSub KeyboardEvent ]
     }
   where
     updateModel x = case x of
+      -----------------------------------------------------------------------------
       SendMessage m -> do
         socket <- use websocket
         sendText socket m
+      -----------------------------------------------------------------------------
       Connect -> do
         currentGameState .= Nothing
         status .= Just "Connecting..."
         connectText
-          "ws:127.0.0.1:15000"
+          ("ws:" <> MS.ms ip <> ":" <> MS.ms port)
           OnOpen
           OnClosed
           OnMessage
           OnError
+      -----------------------------------------------------------------------------
       OnOpen socket -> do
         websocket .= socket
         connected .= True
+      -----------------------------------------------------------------------------
       OnClosed closed -> do
         connected .= False
         M.io $ do
@@ -796,6 +832,7 @@ websocketComponent box =
           dateString <- date & M.toLocaleString
           M.consoleLog $ MS.ms (show closed)
           pure $ ChangeStatus "Disconnected..."
+      -----------------------------------------------------------------------------
       OnMessage message -> do
         case decode (MS.fromMisoString message) :: Maybe ServerResponse of
           Just resp -> do
@@ -815,13 +852,14 @@ websocketComponent box =
                   Nothing -> pure ()       
               _ -> pure ()
           Nothing -> status .= Just "Could not parse message"
+      -----------------------------------------------------------------------------
       Update gameState -> do
         oldGameState <- use prevGameState
         playerId <- use boxId
         case gameState of
           Just gs -> do
             -- game over sound
-            when (gs.isGameOver == True) $ do
+            when gs.isGameOver $ do
               M.io $ do
                 let sound = case gs.winner of
                               Just w | w == playerId -> "win"
@@ -830,7 +868,7 @@ websocketComponent box =
                 cons <-  JSaddle.jsg ("Audio" :: String)
                 audio <-JSaddle.new cons ["../assets/audio/" <> sound <> ".mp3" :: String]
                 _ <- audio JSaddle.# ("play" :: String) $ ()
-                pure $ NoOp 
+                pure NoOp 
             case oldGameState of
               Just oldGs -> do
                 -- player death sound
@@ -841,7 +879,7 @@ websocketComponent box =
                     cons <-  JSaddle.jsg ("Audio" :: String)
                     audio <-JSaddle.new cons ["../assets/audio/death.mp3" :: String]
                     _ <- audio JSaddle.# ("play" :: String) $ ()
-                    pure $ NoOp
+                    pure NoOp
               
                 -- bomb explosion sound
                 let oldBombs = length oldGs.bombs
@@ -851,7 +889,7 @@ websocketComponent box =
                     cons <-  JSaddle.jsg ("Audio" :: String)
                     audio <-JSaddle.new cons ["../assets/audio/explosion.mp3" :: String]
                     _ <- audio JSaddle.# ("play" :: String) $ ()
-                    pure $ NoOp
+                    pure NoOp
 
                 -- get powerup sound
                 let oldPowerups = length (oldGs.players !! playerId).activePowerups
@@ -861,59 +899,71 @@ websocketComponent box =
                     cons <-  JSaddle.jsg ("Audio" :: String)
                     audio <-JSaddle.new cons ["../assets/audio/powerup.mp3" :: String]
                     _ <- audio JSaddle.# ("play" :: String) $ ()
-                    pure $ NoOp
-
+                    pure NoOp
               Nothing -> pure ()
           Nothing -> pure ()
           -- update game state
         old <- use currentGameState
         prevGameState .= old
         currentGameState .= gameState
+      -----------------------------------------------------------------------------
       OnError errorMessage -> do
         M.io_ (M.consoleError errorMessage)
         status .= Just ("Error: " <> errorMessage)
+      -----------------------------------------------------------------------------
       KeyboardEvent keys -> do
         isConnected <- use connected
+        unless isConnected $ do
+          M.io_ $ M.consoleLog "Not connected, ignoring input"
+          heldKeys .= keys
+          return ()
+        
         clientNumber <- use boxId
         oldKeys <- use heldKeys
-        let dirs = IntSet.intersection keys (IntSet.fromList [37,38,39,40])
-            safeHead [] = -1
-            safeHead (x':_) = x' 
-            newKeys = IntSet.difference dirs (IntSet.intersection oldKeys (IntSet.fromList [37,38,39,40]))
-            activeKey = if not (IntSet.null newKeys)
-                        then safeHead (IntSet.elems newKeys)
-                        else safeHead (IntSet.elems dirs)
-            action = case activeKey of
-                      37 -> "left"
-                      38 -> "up"
-                      39 -> "right"
-                      40 -> "down"
-                      _ -> "stop"
-        prevDir <- use lastArrowDir
-        heldKeys .= keys
-        let newDir = case action of
-                      "left"  -> (0, -1)
-                      "right" -> (0, 1)
-                      "up"    -> (-1, 0)
-                      "down"  -> (1, 0)
-                      _       -> (0, 0)
-        when (isConnected && newDir /= prevDir) $ do
-          lastArrowDir .= newDir
-          M.issue (SendMessage (jsonRequest action clientNumber))
-        let wasBombPressed = IntSet.member 32 oldKeys
-            isBombPressed = IntSet.member 32 keys
-        when (isConnected && isBombPressed && not wasBombPressed) $ do
+        
+        let arrowKeys = IntSet.fromList [37,38,39,40]
+            currentArrows = IntSet.intersection keys arrowKeys
+            oldArrows = IntSet.intersection oldKeys arrowKeys
+        -- move if new direction
+        when (currentArrows /= oldArrows) $ do
+          let direction
+                | IntSet.member 37 currentArrows = (0, - 1) -- left
+                | IntSet.member 38 currentArrows = (- 1, 0) -- up
+                | IntSet.member 39 currentArrows = (0, 1) -- right
+                | IntSet.member 40 currentArrows = (1, 0) -- down
+                | otherwise = (0, 0) -- stop
+          
+          prevDir <- use lastArrowDir
+          when (direction /= prevDir) $ do
+            lastArrowDir .= direction
+            let action = case direction of
+                          (0, -1) -> "left"
+                          (-1, 0) -> "up"
+                          (0, 1)  -> "right"
+                          (1, 0)  -> "down"
+                          _       -> "stop"
+            M.issue (SendMessage (jsonRequest action clientNumber))
+        
+        -- place bomb on space press
+        let spaceKey = 32
+            wasSpacePressed = IntSet.member spaceKey oldKeys
+            isSpacePressed = IntSet.member spaceKey keys
+        
+        when (isSpacePressed && not wasSpacePressed) $ do
           M.issue (SendMessage (jsonRequest "bomb" clientNumber))
-        unless isConnected $
-          M.io_ $ M.consoleLog "Not connected, ignoring input"
+        
+        -- update held keys
+        heldKeys .= keys
       CloseBox ->
         M.broadcast box
+      ------------------------------------------------------------------------------
       Disconnect -> do
         currentGameState .= Nothing
         status .= Just "Disconnecting..."
         close =<< use websocket
+      -------------------------------------------------------------------------------
       NoOp -> pure ()
---------------
+-----------------------------------------------------------------------------
 jsonRequest :: Text -> Int -> MisoString
 jsonRequest a p = MS.ms (encode ClientRequest {
   tag = "ClientUpdate",
@@ -926,30 +976,6 @@ viewModel m =
   H.div_
   [ P.className "websocket-box" ]
   [ H.div_
-    [ P.class_ "websocket-header" ]
-    [ H.div_
-      []
-      [ H.span_
-        [ P.classList_
-          [ ("websocket-status", True)
-          , ("status-disconnected", not (m ^. connected))
-          , ("status-connected", m ^. connected)
-          ]
-        ]
-        []
-      , H.span_
-        [ P.class_ "websocket-id"
-        ]
-        [ M.text $ "socket-" <> MS.ms (m ^. boxId) ]
-      ]
-    , H.button_
-      [ P.aria_ "label" "Close"
-      , P.class_ "btn-close"
-      , H.onClick CloseBox
-      ]
-      [ "×" ]
-    ]
-    , H.div_
       [ P.class_ "websocket-controls" ]
       [ M.optionalAttrs
         H.button_
@@ -988,6 +1014,11 @@ viewModel m =
         (renderCanvas m)
   ]
 -----------------------------------------------------------------------------
+leadingZeroes :: Int -> String
+leadingZeroes n
+  | n < 10 = "0" <> show n
+  | otherwise = show n
+
 renderCanvas :: Model -> CanvasState -> Canvas.Canvas ()
 renderCanvas model canvasState = do
   -- clear
@@ -995,13 +1026,17 @@ renderCanvas model canvasState = do
   Canvas.fillRect (0, 0, 600, 560)
 
   let gsMaybe = model ^. currentGameState
+      playerId = _boxId model
   case gsMaybe of
     Nothing -> return ()
     Just gs -> do
       -- print time remaining
       Canvas.fillStyle (Canvas.ColorArg (Col.RGB 0 0 0))
       Canvas.font "20px Arial"
-      Canvas.fillText (M.ms ("Time Remaining: " <> show (gs.timeRemaining `div` 60) <> ":" <> show (gs.timeRemaining `mod` 60)), 10, 20)
+      Canvas.fillText (M.ms ("Time Remaining: " <> leadingZeroes (gs.timeRemaining `div` 60) <> ":" <> leadingZeroes (gs.timeRemaining `mod` 60)), 10, 20)
+      -- print player info
+      let playerInfo = gs.players !! playerId
+      Canvas.fillText (M.ms ("You are " <> if playerInfo.isAlive then "Player " <> show (playerId + 1) else "Dead"), 10, 40)
       -- draw floor and walls
       mapM_ (drawGridRow canvasState gs) [0..12]
       -- draw players
@@ -1080,5 +1115,5 @@ drawExplosion canvasState explosion = do
   let y = explosion.x * 40 + 40
   Canvas.drawImage' (canvasState.explosionImg, fromIntegral x, fromIntegral y, 40, 40)
 -----------------------------------------------------------------------------
-mainClient :: IO ()
-mainClient = M.run $ M.startApp (websocketComponent 0) -- 0 is the socket id
+mainClient :: String -> String -> IO ()
+mainClient ip port = M.run $ M.startApp (websocketComponent ip port 0) -- 0 is the socket id

@@ -1,7 +1,56 @@
 # CS:GO
 
+A monorepo for a LAN multiplayer bomberman clone written with dart and haskell.
+> Note: Part 2 Videos are linked as a Google Drive link containing all member videos contained [at the bottom of this README](#part-2), thank you!
+
+## Highest Phases Achieved
+
+### Dart
+
+- Server
+    - Phase 4
+- Client
+    - Phase 4
+
+### Haskell
+
+- Server
+    - Phase 4
+- Client
+    - Phase 4
+
+## Members and Contributions
+
+- Bumanglag, Lucas
+    - Part 1
+        - Haskell Client
+    - Part 2
+        - Option 2, Teleport
+- Gonda, Stephen James S.
+    - Part 1
+        - Haskell Server
+    - Part 2
+        - Option 4, Vest (Haskell Server-Client)
+- Magpantay, Antonio N.
+    - Part 1
+        - Dart Client
+    - Part 2
+        - Option 1, Five Players
+- Mercado, Ervin Jerod
+    - Part 1
+        - Dart Server
+    - Part 2
+        - Option 5, Heart
+
+# Part 1
+
 ## Dart
+
 Using flame and websockets
+
+### Highest Phase Accomplished for Server and Client
+ 
+- Phase 4
 
 ### How to Run
 
@@ -23,13 +72,15 @@ Navigate to `dart_project/client`
 
 Run `flutter run --dart-entrypoint-args="127.0.0.1 15800"`
 
-This should run a client that connects to `127.0.0.1` in port `15000`
-
-
-
+This should run a client that connects to `127.0.0.1` in port `15800`
 
 ## Haskell
+
 Using miso and websockets
+
+### Highest Phase Accomplished for Server and Client
+
+- Phase 4
 
 ### How to Run
 
@@ -37,7 +88,7 @@ Using miso and websockets
 
 To start the server,
 
-Navigate to `haskell`
+Navigate to `haskell-project`
 
 Run `cabal run haskell -- <players> <game duration> --host <port>`
 
@@ -45,15 +96,25 @@ Where players, game duration and port are integers without the `<>`
 
 The server should be started in `127.0.0.1:<port>`
 
+As an example, the follorwing is a valid command tested in Powershell Windows 11, `cabal run haskell -- 2 120 --host 15000`
+
 #### Client
 
 To start a client,
 
-Navigate to `haskell`
+Navigate to `haskell-project`
 
-Run `cabal run`
+Run `cabal run haskell -- <ip> <port>`
 
-This should run a client that connects to `127.0.0.1` in port `15000`
+> The option `command line arguments` was chosen for running the client.
+
+This should run a client that connects to `ip` in port `port`
+
+As an example, the following is a valid command tested in Powershell Windows 11, `cabal run haskell -- 127.0.0.1 15000`
+
+## Part 2
+
+Part 2 Videos: [https://drive.google.com/drive/folders/1xckwVoeLrabiIE_kbToqNrGVGgJxk4wz?usp=drive_link](https://drive.google.com/drive/folders/1xckwVoeLrabiIE_kbToqNrGVGgJxk4wz?usp=drive_link)
 
 ## References
 

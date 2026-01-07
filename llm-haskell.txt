@@ -1,0 +1,27 @@
+# Bomb Explosions
+
+User: the bombs dont spread explosions northward
+
+GitHub Copilot: Looking at your explosion spreading logic, I can see the issue. In `explodeUntilHard`, you're iterating through the explosion directions, but the **North** direction is defined with negative row offsets going from `-r` to `-1`. The `range` function generates these in ascending order, so for North you get `[(-r, 0), (-r+1, 0), ..., (-1, 0)]` - which means you're checking from the **farthest** tile first and working **inward**.
+
+This causes `explodeUntilHard` to immediately stop if the farthest tile is a hard block, even if closer tiles are valid.
+
+Here's the fix - reverse the North range so it checks from closest to farthest:
+
+````haskell
+// ...existing code...
+    explosionSouth = range ((0, 1), (0, r))
+    explosionEast = range ((1, 0), (r, 0))
+    explosionNorth = reverse $ range ((-r, 0), (-1, 0))
+    explosionWest = reverse $ range ((0, -r), (0, -1))
+// ...existing code...
+````
+
+The issue is that `range` always produces elements in ascending order:
+- **South** `(0,1)` to `(0,r)` → `[(0,1), (0,2), ...]` ✓ (closest first)
+- **East** `(1,0)` to `(r,0)` → `[(1,0), (2,0), ...]` ✓ (closest first)
+- **North** `(-r,0)` to `(-1,0)` → `[(-r,0), ..., (-1,0)]` ✗ (farthest first)
+- **West** `(0,-r)` to `(0,-1)` → `[(0,-r), ..., (0,-1)]` ✗ (farthest first)
+
+By reversing North and West, all directions will correctly check tiles starting from the bomb and moving outward, stopping at the first hard block encountered.
+
